@@ -1,0 +1,242 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Merge packet for diff file examples/sample-pr.diff</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f7f7f4;
+      --panel: #ffffff;
+      --text: #1d2327;
+      --muted: #667085;
+      --line: #d8ddd8;
+      --accent: #0f766e;
+      --risk: #b42318;
+      --code: #111827;
+    }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font: 15px/1.5 ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+    main {
+      max-width: 1120px;
+      margin: 0 auto;
+      padding: 32px 20px 56px;
+    }
+    header {
+      border-bottom: 1px solid var(--line);
+      padding-bottom: 20px;
+      margin-bottom: 22px;
+    }
+    h1 {
+      font-size: clamp(30px, 5vw, 52px);
+      line-height: 1;
+      margin: 0 0 14px;
+      letter-spacing: 0;
+    }
+    h2 {
+      font-size: 20px;
+      margin: 28px 0 10px;
+    }
+    .meta {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 10px;
+      color: var(--muted);
+    }
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 16px;
+      overflow: auto;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 14px;
+    }
+    th, td {
+      text-align: left;
+      border-bottom: 1px solid var(--line);
+      padding: 10px;
+      vertical-align: top;
+    }
+    code, pre {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    }
+    code {
+      color: var(--code);
+      background: #eef2ef;
+      border-radius: 4px;
+      padding: 1px 4px;
+    }
+    pre {
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+      background: #111827;
+      color: #f9fafb;
+      border-radius: 8px;
+      padding: 14px;
+      max-height: 520px;
+      overflow: auto;
+    }
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      min-height: 22px;
+      padding: 0 8px;
+      border-radius: 999px;
+      background: #e6f4f1;
+      color: var(--accent);
+      font-size: 12px;
+      font-weight: 700;
+    }
+    .role-migration, .role-ci, .role-package {
+      background: #fef3f2;
+      color: var(--risk);
+    }
+    ul {
+      padding-left: 22px;
+    }
+  </style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>Merge packet for diff file examples/sample-pr.diff</h1>
+    <div class="meta">
+      <div>Source: <code>diff file examples/sample-pr.diff</code></div>
+      <div>Files: 3</div>
+      <div>Delta: +23/-1</div>
+      <div>Range: <code>?..?</code></div>
+    </div>
+  </header>
+
+  <section>
+    <h2>Changed Files</h2>
+    <div class="panel">
+      <table>
+        <thead><tr><th>File</th><th>Role</th><th>Status</th><th>Delta</th></tr></thead>
+        <tbody><tr><td>src/checkout.py</td><td><span class='pill role-source'>source</span></td><td>modified</td><td>+5/-1</td></tr>
+<tr><td>tests/test_checkout.py</td><td><span class='pill role-test'>test</span></td><td>added</td><td>+16/-0</td></tr>
+<tr><td>.github/workflows/ci.yml</td><td><span class='pill role-ci'>ci</span></td><td>modified</td><td>+2/-0</td></tr></tbody>
+      </table>
+    </div>
+  </section>
+
+  <section>
+    <h2>Verification Commands</h2>
+    <div class="panel"><ul><li><code>python -m unittest discover -s tests</code></li>
+<li><code>python -m compileall src tests</code></li>
+<li><code>review changed GitHub Actions locally or with a disposable branch run</code></li></ul></div>
+  </section>
+
+  <section>
+    <h2>Risk Areas</h2>
+    <div class="panel"><ul><li>CI workflow change: verify permissions, triggers, and artifact behavior.</li></ul></div>
+  </section>
+
+  <section>
+    <h2>Repo Instructions</h2>
+    <div class="panel"><ul><li><strong>AGENTS.md</strong>: Mini Repo Instructions Keep checkout behavior deterministic. Run unit tests before final review.</li></ul></div>
+  </section>
+
+  <section>
+    <h2>Reviewer Checklist</h2>
+    <div class="panel"><ul><li>Read the changed files before editing.</li>
+<li>Confirm the intended behavior from the PR description or issue.</li>
+<li>Run `python -m unittest discover -s tests`.</li>
+<li>Run `python -m compileall src tests`.</li>
+<li>Run `review changed GitHub Actions locally or with a disposable branch run`.</li>
+<li>Check whether changed tests cover the changed source paths.</li>
+<li>Review workflow permissions and artifact paths.</li>
+<li>Summarize residual risk before merge.</li></ul></div>
+  </section>
+
+  <section>
+    <h2>Agent-Ready Prompt</h2>
+    <pre>You are reviewing this pull request: Merge packet for diff file examples/sample-pr.diff
+
+Use the repository instructions and changed-file map below. Focus on correctness, tests, regressions, and merge risk. Do not rewrite unrelated code.
+
+Changed files:
+- src/checkout.py (source, modified, +5/-1)
+- tests/test_checkout.py (test, added, +16/-0)
+- .github/workflows/ci.yml (ci, modified, +2/-0)
+
+Repo instructions:
+- AGENTS.md: Mini Repo Instructions Keep checkout behavior deterministic. Run unit tests before final review.
+
+Verification commands to consider:
+- python -m unittest discover -s tests
+- python -m compileall src tests
+- review changed GitHub Actions locally or with a disposable branch run
+
+Risk areas:
+- CI workflow change: verify permissions, triggers, and artifact behavior.
+
+Diff preview:
+```diff
+diff --git a/src/checkout.py b/src/checkout.py
+index 780bb74..a54a2af 100644
+--- a/src/checkout.py
++++ b/src/checkout.py
+@@ -1,8 +1,14 @@
+ def calculate_total(items, coupon=None):
+     total = sum(item[&quot;price&quot;] for item in items)
+     if coupon == &quot;SAVE10&quot;:
+-        total = total * 0.9
++        total = total - min(total * 0.1, 50)
++    if coupon == &quot;FREESHIP&quot; and total &gt;= 25:
++        return round(total, 2)
+     return round(total, 2)
+ 
+ 
+ def checkout(items, coupon=None):
++    if not items:
++        raise ValueError(&quot;checkout requires at least one item&quot;)
+     return {&quot;total&quot;: calculate_total(items, coupon)}
+diff --git a/tests/test_checkout.py b/tests/test_checkout.py
+new file mode 100644
+index 0000000..5b75197
+--- /dev/null
++++ b/tests/test_checkout.py
+@@ -0,0 +1,18 @@
++import unittest
++
++from src.checkout import checkout
++
++
++class CheckoutTests(unittest.TestCase):
++    def test_save10_coupon_is_capped(self):
++        self.assertEqual(checkout([{&quot;price&quot;: 1000}], &quot;SAVE10&quot;)[&quot;total&quot;], 950)
++
++    def test_empty_checkout_is_rejected(self):
++        with self.assertRaises(ValueError):
++            checkout([])
++
++
++if __name__ == &quot;__main__&quot;:
++    unittest.main()
+diff --git a/.github/workflows/ci.yml b/.github/workflows/ci.yml
+index 1fd32a1..9a1ef92 100644
+--- a/.github/workflows/ci.yml
++++ b/.github/workflows/ci.yml
+@@ -7,3 +7,5 @@ jobs:
+     steps:
+       - uses: actions/checkout@v5
+       - run: python -m unittest discover -s tests
++      - name: Compile
++        run: python -m compileall src tests
+```
+
+Return findings first, then suggested fixes, then exact commands to run.</pre>
+  </section>
+</main>
+</body>
+</html>

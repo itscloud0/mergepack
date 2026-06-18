@@ -1,0 +1,50 @@
+name: mergepack
+description: Turn a pull request diff into an agent-ready merge packet artifact.
+author: Ilia Sorokin
+
+inputs:
+  repo:
+    description: Repository path.
+    required: false
+    default: "."
+  base:
+    description: Base git ref.
+    required: false
+    default: "origin/main"
+  head:
+    description: Head git ref.
+    required: false
+    default: "HEAD"
+  format:
+    description: "Output format: markdown, json, or html."
+    required: false
+    default: "markdown"
+  output:
+    description: Output file path.
+    required: false
+    default: "MERGEPACK.md"
+  upload-artifact:
+    description: Upload the generated packet as a workflow artifact.
+    required: false
+    default: "true"
+
+runs:
+  using: composite
+  steps:
+    - name: Generate merge packet
+      shell: bash
+      env:
+        PYTHONPATH: ${{ github.action_path }}/src
+      run: |
+        python -m mergepack \
+          --repo "${{ inputs.repo }}" \
+          --base "${{ inputs.base }}" \
+          --head "${{ inputs.head }}" \
+          --format "${{ inputs.format }}" \
+          --output "${{ inputs.output }}"
+    - name: Upload merge packet
+      if: inputs.upload-artifact == 'true'
+      uses: actions/upload-artifact@v4
+      with:
+        name: mergepack
+        path: ${{ inputs.output }}

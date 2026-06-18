@@ -1,0 +1,223 @@
+from __future__ import annotations
+
+import json
+import subprocess
+import sys
+import tempfile
+import unittest
+from pathlib import Path
+
+from mergepack.core import (
+    DiffSource,
+    build_packet,
+    classify_path,
+    collect_instructions,
+    detect_commands,
+    load_diff_from_file,
+    load_diff_from_git,
+    parse_changed_files,
+    parse_pr_spec,
+)
+from mergepack.render import render_html, render_markdown
+
+
+SAMPLE_DIFF = """diff --git a/src/auth.py b/src/auth.py
+index 7f3a111..89abcde 100644
+--- a/src/auth.py
++++ b/src/auth.py
+@@ -1,4 +1,7 @@
+ def login(user):
+-    return True
++    if not user.active:
++        return False
++    return True
+diff --git a/tests/test_auth.py b/tests/test_auth.py
+new file mode 100644
+index 0000000..1111111
+--- /dev/null
++++ b/tests/test_auth.py
+@@ -0,0 +1,3 @@
++def test_inactive_user_cannot_login():
++    assert True
+diff --git a/.github/workflows/ci.yml b/.github/workflows/ci.yml
+index 1111111..2222222 100644
+--- a/.github/workflows/ci.yml
++++ b/.github/workflows/ci.yml
+@@ -1,3 +1,4 @@
+ name: CI
++permissions: read-all
+"""
+
+
+class MergepackTests(unittest.TestCase):
+    def test_classifies_common_paths(self) -> None:
+        self.assertEqual(classify_path("src/app.py"), "source")
+        self.assertEqual(classify_path("tests/test_app.py"), "test")
+        self.assertEqual(classify_path(".github/workflows/ci.yml"), "ci")
+        self.assertEqual(classify_path("pyproject.toml"), "package")
+        self.assertEqual(classify_path("docs/usage.md"), "docs")
+
+    def test_parse_changed_files_counts_delta(self) -> None:
+        files = parse_changed_files(SAMPLE_DIFF)
+        by_path = {file.path: file for file in files}
+
+        self.assertEqual(by_path["src/auth.py"].role, "source")
+        self.assertEqual(by_path["src/auth.py"].additions, 3)
+        self.assertEqual(by_path["src/auth.py"].deletions, 1)
+        self.assertEqual(by_path["tests/test_auth.py"].status, "added")
+        self.assertEqual(by_path[".github/workflows/ci.yml"].role, "ci")
+
+    def test_build_packet_detects_commands_instructions_and_risk(self) -> None:
+        with tempfile.TemporaryDirectory() as raw_tmp:
+            repo = Path(raw_tmp)
+            (repo / "src").mkdir()
+            (repo / "tests").mkdir()
+            (repo / "pyproject.toml").write_text("[project]\nname='sample'\n", encoding="utf-8")
+            (repo / "AGENTS.md").write_text("# Rules\nRun tests before final review.\n", encoding="utf-8")
+
+            packet = build_packet(repo, DiffSource(label="sample diff", diff_text=SAMPLE_DIFF), "Test packet")
+
+        self.assertEqual(packet.stats["files"], 3)
+        self.assertIn("python -m unittest discover -s tests", packet.commands)
+        self.assertTrue(any(item.path == "AGENTS.md" for item in packet.instructions))
+        self.assertTrue(any("CI workflow" in risk for risk in packet.risk_areas))
+        self.assertIn("Agent-Ready Prompt", render_markdown(packet))
+        self.assertIn("<table>", render_html(packet))
+
+    def test_json_shape_is_serializable(self) -> None:
+        with tempfile.TemporaryDirectory() as raw_tmp:
+            repo = Path(raw_tmp)
+            packet = build_packet(repo, DiffSource(label="sample diff", diff_text=SAMPLE_DIFF), "JSON packet")
+            encoded = json.dumps(packet.to_json())
+        self.assertIn("changed_files", encoded)
+        self.assertIn("high_risk", encoded)
+
+    def test_tox_env_section_does_not_trigger_secret_risk(self) -> None:
+        diff = """diff --git a/pyproject.toml b/pyproject.toml
+index 1111111..2222222 100644
+--- a/pyproject.toml
++++ b/pyproject.toml
+@@ -1,2 +1,3 @@
++[tool.tox.env.stress]
++commands = ["pytest"]
+"""
+        with tempfile.TemporaryDirectory() as raw_tmp:
+            repo = Path(raw_tmp)
+            packet = build_packet(repo, DiffSource(label="tox diff", diff_text=diff), "tox")
+
+        self.assertFalse(any("Sensitive-looking" in risk for risk in packet.risk_areas))
+
+    def test_detect_commands_prefers_uv_tox_when_configured(self) -> None:
+        with tempfile.TemporaryDirectory() as raw_tmp:
+            repo = Path(raw_tmp)
+            (repo / "tests").mkdir()
+            (repo / "uv.lock").write_text("version = 1\n", encoding="utf-8")
+            (repo / "pyproject.toml").write_text(
+                "[tool.tox]\nrequires = []\n[tool.tox.env.style]\ncommands = []\n",
+                encoding="utf-8",
+            )
+
+            commands = detect_commands(repo, [])
+
+        self.assertIn("uv run --locked --no-default-groups --group dev tox run", commands)
+        self.assertNotIn("python -m unittest discover -s tests", commands)
+
+    def test_detect_commands_prefers_pytest_when_configured(self) -> None:
+        with tempfile.TemporaryDirectory() as raw_tmp:
+            repo = Path(raw_tmp)
+            (repo / "tests").mkdir()
+            (repo / "pyproject.toml").write_text("[tool.pytest.ini_options]\n", encoding="utf-8")
+
+            commands = detect_commands(repo, [])
+
+        self.assertIn("python -m pytest", commands)
+        self.assertNotIn("python -m unittest discover -s tests", commands)
+
+    def test_instruction_summary_strips_html_hero(self) -> None:
+        with tempfile.TemporaryDirectory() as raw_tmp:
+            repo = Path(raw_tmp)
+            (repo / "README.md").write_text(
+                '<div align="center"><img src="logo.svg"></div>\n'
+                "# Click\n\n"
+                "Click is a Python package for creating command line interfaces.\n\n"
+                "## Donate\n\n"
+                "Funding links are not repo instructions.\n",
+                encoding="utf-8",
+            )
+
+            instructions = collect_instructions(repo)
+
+        self.assertEqual(instructions[0].path, "README.md")
+        self.assertEqual(
+            instructions[0].summary,
+            "Click Click is a Python package for creating command line interfaces.",
+        )
+
+    def test_load_diff_from_file(self) -> None:
+        with tempfile.TemporaryDirectory() as raw_tmp:
+            path = Path(raw_tmp) / "sample.diff"
+            path.write_text(SAMPLE_DIFF, encoding="utf-8")
+            source = load_diff_from_file(path)
+        self.assertEqual(source.diff_text, SAMPLE_DIFF)
+        self.assertIn("diff file", source.label)
+
+    def test_load_diff_from_git_range(self) -> None:
+        with tempfile.TemporaryDirectory() as raw_tmp:
+            repo = Path(raw_tmp)
+            subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
+            subprocess.run(["git", "config", "user.email", "test@example.invalid"], cwd=repo, check=True)
+            subprocess.run(["git", "config", "user.name", "Test User"], cwd=repo, check=True)
+            (repo / "app.py").write_text("print('one')\n", encoding="utf-8")
+            subprocess.run(["git", "add", "app.py"], cwd=repo, check=True)
+            subprocess.run(["git", "commit", "-qm", "initial"], cwd=repo, check=True)
+            subprocess.run(["git", "branch", "base"], cwd=repo, check=True)
+            (repo / "app.py").write_text("print('two')\n", encoding="utf-8")
+            subprocess.run(["git", "commit", "-qam", "change"], cwd=repo, check=True)
+
+            source = load_diff_from_git(repo, "base", "HEAD")
+
+        self.assertIn("app.py", source.diff_text)
+
+    def test_parse_pr_spec_accepts_url_and_shorthand(self) -> None:
+        self.assertEqual(parse_pr_spec("owner/repo#12"), ("owner/repo", "12"))
+        self.assertEqual(
+            parse_pr_spec("https://github.com/owner/repo/pull/34"),
+            ("owner/repo", "34"),
+        )
+
+
+class CliTests(unittest.TestCase):
+    def test_cli_writes_json_from_diff_file(self) -> None:
+        with tempfile.TemporaryDirectory() as raw_tmp:
+            tmp = Path(raw_tmp)
+            diff_path = tmp / "sample.diff"
+            out_path = tmp / "packet.json"
+            diff_path.write_text(SAMPLE_DIFF, encoding="utf-8")
+
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "mergepack",
+                    "--repo",
+                    str(tmp),
+                    "--diff-file",
+                    str(diff_path),
+                    "--format",
+                    "json",
+                    "--output",
+                    str(out_path),
+                ],
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                check=False,
+            )
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            payload = json.loads(out_path.read_text(encoding="utf-8"))
+            self.assertEqual(payload["stats"]["files"], 3)
+
+
+if __name__ == "__main__":
+    unittest.main()
