@@ -40,6 +40,9 @@ The report shows changed files, risk flags, verification commands, repo instruct
 
 ## Installation
 
+Requires Python 3.10 or newer. If `python3` is older on your machine, use a newer
+interpreter such as `python3.11` or `python3.12`.
+
 From a checkout:
 
 ```bash
@@ -49,7 +52,8 @@ python -m pip install .
 For an isolated tryout:
 
 ```bash
-python3 -m venv /tmp/mergepack-venv
+PYTHON=python3.11  # or python3.12 / any Python 3.10+ interpreter
+$PYTHON -m venv /tmp/mergepack-venv
 /tmp/mergepack-venv/bin/python -m pip install .
 /tmp/mergepack-venv/bin/mergepack --help
 ```
