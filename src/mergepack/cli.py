@@ -5,7 +5,14 @@ import json
 import sys
 from pathlib import Path
 
-from .core import MergepackError, build_packet, load_diff_from_file, load_diff_from_git, load_diff_from_pr
+from .core import (
+    MergepackError,
+    build_packet,
+    load_changed_files_from_file,
+    load_diff_from_file,
+    load_diff_from_git,
+    load_diff_from_pr,
+)
 from .render import render_html, render_markdown
 
 
@@ -24,6 +31,10 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--diff-file",
         help="Read a pasted unified diff from a file instead of running git diff.",
+    )
+    parser.add_argument(
+        "--changed-files",
+        help="Read a newline-delimited changed-file list when a full diff is unavailable.",
     )
     parser.add_argument(
         "--pr",
@@ -66,10 +77,16 @@ def main(argv: list[str] | None = None) -> int:
     repo = repo_arg.resolve()
 
     try:
+        input_modes = sum(bool(value) for value in (args.pr, args.diff_file, args.changed_files))
+        if input_modes > 1:
+            parser.error("choose only one of --pr, --diff-file, or --changed-files")
+
         if args.pr:
             diff_source = load_diff_from_pr(args.pr)
         elif args.diff_file:
             diff_source = load_diff_from_file(Path(args.diff_file))
+        elif args.changed_files:
+            diff_source = load_changed_files_from_file(Path(args.changed_files))
         else:
             diff_source = load_diff_from_git(repo, args.base, args.head)
 

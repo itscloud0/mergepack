@@ -84,6 +84,16 @@ Use a pasted diff:
 mergepack --diff-file pr.diff --repo . --output MERGEPACK.md
 ```
 
+Use a changed-file list when CI cannot fetch full diff history:
+
+```bash
+printf "src/app.py\ntests/test_app.py\n" > changed-files.txt
+mergepack --changed-files changed-files.txt --repo . --output MERGEPACK.md
+```
+
+Changed-files mode still classifies files and detects likely commands, but it marks
+the missing diff preview and line-level delta as a limitation.
+
 Use GitHub CLI for a public PR:
 
 ```bash
@@ -151,6 +161,16 @@ jobs:
           output: MERGEPACK.md
 ```
 
+If your workflow already writes a newline-delimited changed-file list, pass it
+instead of `base` / `head`:
+
+```yaml
+      - uses: itscloud0/mergepack@v0.1.0
+        with:
+          changed-files: changed-files.txt
+          output: MERGEPACK.md
+```
+
 For local development in this repo, `.github/workflows/mergepack.yml` shows the same pattern with `uses: ./`.
 
 ## Agent Skills
@@ -192,6 +212,7 @@ Read `AGENT_SKILLS.md` for install and usage notes.
 - v0.1 uses heuristics for file roles and risk areas.
 - GitHub PR mode requires `gh`.
 - Command detection is best-effort.
+- Changed-files mode has no diff hunks, so additions/deletions are `0` and the packet tells reviewers to inspect the PR diff separately.
 - Python command detection prefers tox/uv and pytest when repo config is present.
 - It does not inspect code ownership or coverage data.
 - It does not redact secrets from arbitrary diffs; do not run it on sensitive patches.

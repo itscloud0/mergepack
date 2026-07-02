@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- Added `--changed-files` input mode for CI systems that can provide a newline-delimited changed-file list but not a full git diff.
+- Added composite action `changed-files` input and README guidance for changed-files mode.
+- Changed packets from changed-file lists to explicitly mark the missing diff preview and line-level deltas as a limitation.
+
 ## v0.1.0 - 2026-06-18
 
 - Added CLI for Markdown, JSON, and HTML merge packets.

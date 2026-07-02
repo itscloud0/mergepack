@@ -13,9 +13,11 @@ from mergepack.core import (
     classify_path,
     collect_instructions,
     detect_commands,
+    load_changed_files_from_file,
     load_diff_from_file,
     load_diff_from_git,
     parse_changed_files,
+    parse_changed_file_list,
     parse_pr_spec,
 )
 from mergepack.render import render_html, render_markdown
@@ -161,6 +163,25 @@ index 1111111..2222222 100644
         self.assertEqual(source.diff_text, SAMPLE_DIFF)
         self.assertIn("diff file", source.label)
 
+    def test_changed_files_input_marks_missing_diff_preview(self) -> None:
+        with tempfile.TemporaryDirectory() as raw_tmp:
+            repo = Path(raw_tmp)
+            changed_path = repo / "changed-files.txt"
+            changed_path.write_text(
+                "./src/app.py\n\n" "tests/test_app.py\nsrc/app.py\n",
+                encoding="utf-8",
+            )
+            source = load_changed_files_from_file(changed_path)
+            packet = build_packet(repo, source, "Changed files packet")
+
+        self.assertEqual(parse_changed_file_list("./src/app.py\nsrc/app.py\n"), ["src/app.py"])
+        self.assertEqual(packet.stats["files"], 2)
+        self.assertEqual(packet.stats["additions"], 0)
+        self.assertEqual(packet.stats["deletions"], 0)
+        self.assertIn("diff preview", packet.diff_preview)
+        self.assertTrue(any("Changed-files input limitation" in risk for risk in packet.risk_areas))
+        self.assertIn("src/app.py", packet.agent_prompt)
+
     def test_load_diff_from_git_range(self) -> None:
         with tempfile.TemporaryDirectory() as raw_tmp:
             repo = Path(raw_tmp)
@@ -217,6 +238,39 @@ class CliTests(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stderr)
             payload = json.loads(out_path.read_text(encoding="utf-8"))
             self.assertEqual(payload["stats"]["files"], 3)
+
+    def test_cli_writes_json_from_changed_files(self) -> None:
+        with tempfile.TemporaryDirectory() as raw_tmp:
+            tmp = Path(raw_tmp)
+            changed_path = tmp / "changed-files.txt"
+            out_path = tmp / "packet.json"
+            changed_path.write_text("src/app.py\ntests/test_app.py\n", encoding="utf-8")
+
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "mergepack",
+                    "--repo",
+                    str(tmp),
+                    "--changed-files",
+                    str(changed_path),
+                    "--format",
+                    "json",
+                    "--output",
+                    str(out_path),
+                ],
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                check=False,
+            )
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            payload = json.loads(out_path.read_text(encoding="utf-8"))
+            self.assertEqual(payload["stats"]["files"], 2)
+            self.assertEqual(payload["stats"]["additions"], 0)
+            self.assertIn("Changed-files input limitation", payload["diff_preview"])
 
 
 if __name__ == "__main__":

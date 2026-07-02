@@ -21,6 +21,8 @@ class DiffSource:
     url: str | None = None
     title: str | None = None
     body: str | None = None
+    changed_paths: tuple[str, ...] = ()
+    limitations: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -122,6 +124,24 @@ def load_diff_from_file(path: Path) -> DiffSource:
     return DiffSource(label=f"diff file {path}", diff_text=diff_text)
 
 
+def load_changed_files_from_file(path: Path) -> DiffSource:
+    if not path.exists():
+        raise MergepackError(f"changed-files file does not exist: {path}")
+    raw_text = path.read_text(encoding="utf-8")
+    paths = parse_changed_file_list(raw_text)
+    if not paths:
+        raise MergepackError(f"changed-files file is empty: {path}")
+    return DiffSource(
+        label=f"changed files {path}",
+        diff_text="",
+        changed_paths=tuple(paths),
+        limitations=(
+            "Changed-files input limitation: diff preview and line-level additions/deletions "
+            "are unavailable; inspect the PR diff before merging.",
+        ),
+    )
+
+
 def load_diff_from_pr(pr: str) -> DiffSource:
     if shutil.which("gh") is None:
         raise MergepackError("--pr requires GitHub CLI (`gh`) on PATH")
@@ -172,7 +192,10 @@ def build_packet(
     max_diff_lines: int = 220,
     repo_label: str | None = None,
 ) -> MergePacket:
-    changed_files = parse_changed_files(diff_source.diff_text)
+    if diff_source.changed_paths:
+        changed_files = changed_files_from_paths(diff_source.changed_paths)
+    else:
+        changed_files = parse_changed_files(diff_source.diff_text)
     if not changed_files:
         raise MergepackError("diff did not contain changed files")
 
@@ -180,8 +203,11 @@ def build_packet(
     commands = detect_commands(repo, changed_files)
     instructions = collect_instructions(repo)
     risk_areas = detect_risks(changed_files, diff_source.diff_text)
+    for limitation in diff_source.limitations:
+        if limitation not in risk_areas:
+            risk_areas.append(limitation)
     checklist = build_checklist(changed_files, commands, risk_areas)
-    diff_preview = trim_diff(diff_source.diff_text, max_diff_lines)
+    diff_preview = build_diff_preview(diff_source, max_diff_lines)
     packet_title = title or diff_source.title or f"Merge packet for {diff_source.label}"
     prompt = build_agent_prompt(
         title=packet_title,
@@ -207,6 +233,39 @@ def build_packet(
         agent_prompt=prompt,
         diff_preview=diff_preview,
         stats=stats,
+    )
+
+
+def parse_changed_file_list(text: str) -> list[str]:
+    paths: list[str] = []
+    seen: set[str] = set()
+    for raw_line in text.splitlines():
+        path = raw_line.strip()
+        if not path:
+            continue
+        if "\x00" in path:
+            raise MergepackError("changed-files list contains a NUL byte")
+        if path.startswith("./"):
+            path = path[2:]
+        if path not in seen:
+            paths.append(path)
+            seen.add(path)
+    return paths
+
+
+def changed_files_from_paths(paths: tuple[str, ...]) -> list[ChangedFile]:
+    return sorted(
+        (
+            ChangedFile(
+                path=path,
+                status="modified",
+                role=classify_path(path),
+                additions=0,
+                deletions=0,
+            )
+            for path in paths
+        ),
+        key=lambda item: (role_sort_key(item.role), item.path),
     )
 
 
@@ -566,6 +625,16 @@ def trim_diff(diff_text: str, max_lines: int) -> str:
         return diff_text.rstrip()
     omitted = len(lines) - max_lines
     return "\n".join(lines[:max_lines]).rstrip() + f"\n... ({omitted} diff lines omitted)"
+
+
+def build_diff_preview(diff_source: DiffSource, max_lines: int) -> str:
+    if diff_source.diff_text.strip():
+        return trim_diff(diff_source.diff_text, max_lines)
+    if diff_source.changed_paths:
+        listed_paths = "\n".join(f"- {path}" for path in diff_source.changed_paths)
+        limitation = "\n".join(diff_source.limitations)
+        return f"{limitation}\n\nChanged files:\n{listed_paths}".rstrip()
+    return ""
 
 
 def _inside_git_worktree(repo: Path) -> bool:

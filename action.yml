@@ -15,6 +15,10 @@ inputs:
     description: Head git ref.
     required: false
     default: "HEAD"
+  changed-files:
+    description: Newline-delimited changed-file list path. When set, base/head diff lookup is skipped.
+    required: false
+    default: ""
   format:
     description: "Output format: markdown, json, or html."
     required: false
@@ -35,13 +39,24 @@ runs:
       shell: bash
       env:
         PYTHONPATH: ${{ github.action_path }}/src
+        MERGEPACK_REPO: ${{ inputs.repo }}
+        MERGEPACK_BASE: ${{ inputs.base }}
+        MERGEPACK_HEAD: ${{ inputs.head }}
+        MERGEPACK_CHANGED_FILES: ${{ inputs.changed-files }}
+        MERGEPACK_FORMAT: ${{ inputs.format }}
+        MERGEPACK_OUTPUT: ${{ inputs.output }}
       run: |
-        python -m mergepack \
-          --repo "${{ inputs.repo }}" \
-          --base "${{ inputs.base }}" \
-          --head "${{ inputs.head }}" \
-          --format "${{ inputs.format }}" \
-          --output "${{ inputs.output }}"
+        args=(
+          --repo "$MERGEPACK_REPO"
+          --format "$MERGEPACK_FORMAT"
+          --output "$MERGEPACK_OUTPUT"
+        )
+        if [ -n "$MERGEPACK_CHANGED_FILES" ]; then
+          args+=(--changed-files "$MERGEPACK_CHANGED_FILES")
+        else
+          args+=(--base "$MERGEPACK_BASE" --head "$MERGEPACK_HEAD")
+        fi
+        python -m mergepack "${args[@]}"
     - name: Upload merge packet
       if: inputs.upload-artifact == 'true'
       uses: actions/upload-artifact@v4
