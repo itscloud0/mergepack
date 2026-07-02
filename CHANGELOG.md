@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## v0.2.0 - 2026-07-02
 
 - Added `--changed-files` input mode for CI systems that can provide a newline-delimited changed-file list but not a full git diff.
 - Added composite action `changed-files` input and README guidance for changed-files mode.
