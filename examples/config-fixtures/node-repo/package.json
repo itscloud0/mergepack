@@ -1,0 +1,10 @@
+{
+  "name": "mergepack-node-config-fixture",
+  "version": "0.0.0",
+  "private": true,
+  "scripts": {
+    "build": "tsc -b",
+    "lint": "eslint .",
+    "test": "vitest run"
+  }
+}

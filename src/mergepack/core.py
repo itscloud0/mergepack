@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import fnmatch
 import json
 import re
 import shutil
@@ -38,6 +39,41 @@ class ChangedFile:
 class InstructionFile:
     path: str
     summary: str
+
+
+VALID_FILE_ROLES = (
+    "source",
+    "test",
+    "package",
+    "migration",
+    "ci",
+    "config",
+    "docs",
+    "asset",
+    "other",
+)
+CONFIG_FILENAMES = (".mergepack.json", "mergepack.json")
+
+
+@dataclass(frozen=True)
+class PathRoleRule:
+    pattern: str
+    role: str
+
+
+@dataclass(frozen=True)
+class MergepackConfig:
+    commands: tuple[str, ...] = ()
+    path_roles: tuple[PathRoleRule, ...] = ()
+    source: str | None = None
+
+    def role_for_path(self, path: str) -> str | None:
+        normalized = path.replace("\\", "/")
+        for rule in self.path_roles:
+            pattern = rule.pattern.replace("\\", "/")
+            if fnmatch.fnmatchcase(normalized, pattern):
+                return rule.role
+        return None
 
 
 @dataclass
@@ -142,6 +178,84 @@ def load_changed_files_from_file(path: Path) -> DiffSource:
     )
 
 
+def load_config(repo: Path, config_path: Path | None = None) -> MergepackConfig:
+    path = resolve_config_path(repo, config_path)
+    if path is None:
+        return MergepackConfig()
+    if not path.exists():
+        raise MergepackError(f"config file does not exist: {path}")
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        raise MergepackError(f"config file is not valid JSON: {path}") from exc
+    except OSError as exc:
+        raise MergepackError(f"could not read config file: {path}") from exc
+    if not isinstance(data, dict):
+        raise MergepackError("config file must contain a JSON object")
+
+    commands = parse_config_commands(data.get("commands", []), "commands")
+    path_roles = parse_config_path_roles(data.get("path_roles", []))
+    return MergepackConfig(
+        commands=tuple(commands),
+        path_roles=tuple(path_roles),
+        source=str(path),
+    )
+
+
+def resolve_config_path(repo: Path, config_path: Path | None) -> Path | None:
+    if config_path is None:
+        for name in CONFIG_FILENAMES:
+            candidate = repo / name
+            if candidate.exists():
+                return candidate
+        return None
+
+    candidate = config_path.expanduser()
+    if candidate.is_absolute():
+        return candidate
+    cwd_candidate = candidate.resolve()
+    if cwd_candidate.exists():
+        return cwd_candidate
+    return (repo / candidate).resolve()
+
+
+def parse_config_commands(raw_commands: object, field_name: str) -> list[str]:
+    if raw_commands is None:
+        return []
+    if not isinstance(raw_commands, list):
+        raise MergepackError(f"config field `{field_name}` must be a list of strings")
+    commands: list[str] = []
+    for index, raw_command in enumerate(raw_commands):
+        if not isinstance(raw_command, str) or not raw_command.strip():
+            raise MergepackError(f"config field `{field_name}[{index}]` must be a non-empty string")
+        command = raw_command.strip()
+        if command not in commands:
+            commands.append(command)
+    return commands
+
+
+def parse_config_path_roles(raw_rules: object) -> list[PathRoleRule]:
+    if raw_rules is None:
+        return []
+    if not isinstance(raw_rules, list):
+        raise MergepackError("config field `path_roles` must be a list of objects")
+    rules: list[PathRoleRule] = []
+    for index, raw_rule in enumerate(raw_rules):
+        if not isinstance(raw_rule, dict):
+            raise MergepackError(f"config field `path_roles[{index}]` must be an object")
+        pattern = raw_rule.get("pattern")
+        role = raw_rule.get("role")
+        if not isinstance(pattern, str) or not pattern.strip():
+            raise MergepackError(
+                f"config field `path_roles[{index}].pattern` must be a non-empty string"
+            )
+        if role not in VALID_FILE_ROLES:
+            valid = ", ".join(VALID_FILE_ROLES)
+            raise MergepackError(f"config field `path_roles[{index}].role` must be one of: {valid}")
+        rules.append(PathRoleRule(pattern=pattern.strip(), role=str(role)))
+    return rules
+
+
 def load_diff_from_pr(pr: str) -> DiffSource:
     if shutil.which("gh") is None:
         raise MergepackError("--pr requires GitHub CLI (`gh`) on PATH")
@@ -191,16 +305,18 @@ def build_packet(
     title: str | None = None,
     max_diff_lines: int = 220,
     repo_label: str | None = None,
+    config: MergepackConfig | None = None,
 ) -> MergePacket:
+    config = config or MergepackConfig()
     if diff_source.changed_paths:
-        changed_files = changed_files_from_paths(diff_source.changed_paths)
+        changed_files = changed_files_from_paths(diff_source.changed_paths, config)
     else:
-        changed_files = parse_changed_files(diff_source.diff_text)
+        changed_files = parse_changed_files(diff_source.diff_text, config)
     if not changed_files:
         raise MergepackError("diff did not contain changed files")
 
     stats = summarize_stats(changed_files)
-    commands = detect_commands(repo, changed_files)
+    commands = detect_commands(repo, changed_files, config)
     instructions = collect_instructions(repo)
     risk_areas = detect_risks(changed_files, diff_source.diff_text)
     for limitation in diff_source.limitations:
@@ -253,13 +369,16 @@ def parse_changed_file_list(text: str) -> list[str]:
     return paths
 
 
-def changed_files_from_paths(paths: tuple[str, ...]) -> list[ChangedFile]:
+def changed_files_from_paths(
+    paths: tuple[str, ...],
+    config: MergepackConfig | None = None,
+) -> list[ChangedFile]:
     return sorted(
         (
             ChangedFile(
                 path=path,
                 status="modified",
-                role=classify_path(path),
+                role=classify_path(path, config),
                 additions=0,
                 deletions=0,
             )
@@ -269,7 +388,10 @@ def changed_files_from_paths(paths: tuple[str, ...]) -> list[ChangedFile]:
     )
 
 
-def parse_changed_files(diff_text: str) -> list[ChangedFile]:
+def parse_changed_files(
+    diff_text: str,
+    config: MergepackConfig | None = None,
+) -> list[ChangedFile]:
     files: dict[str, dict[str, int | str]] = {}
     current: str | None = None
 
@@ -298,7 +420,7 @@ def parse_changed_files(diff_text: str) -> list[ChangedFile]:
             ChangedFile(
                 path=path,
                 status=str(data["status"]),
-                role=classify_path(path),
+                role=classify_path(path, config),
                 additions=int(data["additions"]),
                 deletions=int(data["deletions"]),
             )
@@ -318,7 +440,12 @@ def parse_diff_git_path(line: str) -> str | None:
     return right
 
 
-def classify_path(path: str) -> str:
+def classify_path(path: str, config: MergepackConfig | None = None) -> str:
+    if config:
+        configured_role = config.role_for_path(path)
+        if configured_role:
+            return configured_role
+
     lowered = path.lower()
     parts = lowered.split("/")
     name = parts[-1]
@@ -387,12 +514,20 @@ def summarize_stats(files: list[ChangedFile]) -> dict[str, int]:
     return stats
 
 
-def detect_commands(repo: Path, changed_files: list[ChangedFile]) -> list[str]:
+def detect_commands(
+    repo: Path,
+    changed_files: list[ChangedFile],
+    config: MergepackConfig | None = None,
+) -> list[str]:
     commands: list[str] = []
 
     def add(command: str) -> None:
         if command not in commands:
             commands.append(command)
+
+    if config:
+        for command in config.commands:
+            add(command)
 
     if (repo / "package.json").exists():
         scripts = read_package_scripts(repo / "package.json")

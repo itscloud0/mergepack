@@ -1,0 +1,12 @@
+{
+  "commands": [
+    "nox -s tests",
+    "python -m ruff check src tests"
+  ],
+  "path_roles": [
+    {
+      "pattern": "checks/*.py",
+      "role": "test"
+    }
+  ]
+}

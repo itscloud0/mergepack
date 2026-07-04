@@ -9,6 +9,7 @@ from .core import (
     MergepackError,
     build_packet,
     load_changed_files_from_file,
+    load_config,
     load_diff_from_file,
     load_diff_from_git,
     load_diff_from_pr,
@@ -35,6 +36,13 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--changed-files",
         help="Read a newline-delimited changed-file list when a full diff is unavailable.",
+    )
+    parser.add_argument(
+        "--config",
+        help=(
+            "Read repo-specific commands and path rules from JSON. "
+            "Defaults to .mergepack.json or mergepack.json when present in --repo."
+        ),
     )
     parser.add_argument(
         "--pr",
@@ -89,6 +97,7 @@ def main(argv: list[str] | None = None) -> int:
             diff_source = load_changed_files_from_file(Path(args.changed_files))
         else:
             diff_source = load_diff_from_git(repo, args.base, args.head)
+        config = load_config(repo, Path(args.config) if args.config else None)
 
         packet = build_packet(
             repo=repo,
@@ -96,6 +105,7 @@ def main(argv: list[str] | None = None) -> int:
             title=args.title,
             max_diff_lines=args.max_diff_lines,
             repo_label=args.repo,
+            config=config,
         )
     except MergepackError as exc:
         print(f"mergepack: {exc}", file=sys.stderr)

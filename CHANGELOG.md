@@ -4,6 +4,8 @@
 
 - Added Go, Rust, and Node PR fixtures with expected packet fields for command-detection coverage.
 - Classified common Go and Node test filenames such as `*_test.go` and `*.test.ts` as tests.
+- Added JSON config support for repo-specific verification commands and path role rules.
+- Added CLI `--config`, composite action `config`, and Python/Node config fixtures.
 
 ## v0.2.0 - 2026-07-02
 

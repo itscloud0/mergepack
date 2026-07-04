@@ -19,6 +19,10 @@ inputs:
     description: Newline-delimited changed-file list path. When set, base/head diff lookup is skipped.
     required: false
     default: ""
+  config:
+    description: Optional mergepack JSON config path for commands and path role rules.
+    required: false
+    default: ""
   format:
     description: "Output format: markdown, json, or html."
     required: false
@@ -43,6 +47,7 @@ runs:
         MERGEPACK_BASE: ${{ inputs.base }}
         MERGEPACK_HEAD: ${{ inputs.head }}
         MERGEPACK_CHANGED_FILES: ${{ inputs.changed-files }}
+        MERGEPACK_CONFIG: ${{ inputs.config }}
         MERGEPACK_FORMAT: ${{ inputs.format }}
         MERGEPACK_OUTPUT: ${{ inputs.output }}
       run: |
@@ -51,6 +56,9 @@ runs:
           --format "$MERGEPACK_FORMAT"
           --output "$MERGEPACK_OUTPUT"
         )
+        if [ -n "$MERGEPACK_CONFIG" ]; then
+          args+=(--config "$MERGEPACK_CONFIG")
+        fi
         if [ -n "$MERGEPACK_CHANGED_FILES" ]; then
           args+=(--changed-files "$MERGEPACK_CHANGED_FILES")
         else

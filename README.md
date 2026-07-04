@@ -97,6 +97,25 @@ mergepack --changed-files changed-files.txt --repo . --output MERGEPACK.md
 Changed-files mode still classifies files and detects likely commands, but it marks
 the missing diff preview and line-level delta as a limitation.
 
+Add repo-specific commands and path roles with `.mergepack.json` or `mergepack.json`:
+
+```json
+{
+  "commands": ["pnpm test -- --runInBand", "pnpm lint"],
+  "path_roles": [
+    { "pattern": "apps/*/e2e/*.ts", "role": "test" }
+  ]
+}
+```
+
+```bash
+mergepack --diff-file pr.diff --repo . --config .mergepack.json --output MERGEPACK.md
+```
+
+When `--config` is omitted, mergepack auto-discovers `.mergepack.json` or
+`mergepack.json` in `--repo`. Configured commands appear before detected commands;
+configured path roles override the built-in file-role heuristics for matching paths.
+
 Use GitHub CLI for a public PR:
 
 ```bash
@@ -161,6 +180,7 @@ jobs:
         with:
           base: ${{ github.event.pull_request.base.sha }}
           head: ${{ github.event.pull_request.head.sha }}
+          config: .mergepack.json
           output: MERGEPACK.md
 ```
 
@@ -215,6 +235,8 @@ Read `AGENT_SKILLS.md` for install and usage notes.
 - v0.1 uses heuristics for file roles and risk areas.
 - GitHub PR mode requires `gh`.
 - Command detection is best-effort.
+- Config files support explicit commands and path role rules; they do not provide
+  semantic test selection or ownership matching.
 - Changed-files mode has no diff hunks, so additions/deletions are `0` and the packet tells reviewers to inspect the PR diff separately.
 - Python command detection prefers tox/uv and pytest when repo config is present; Go, Rust, and Node command detection uses `go.mod`, `Cargo.toml`, and `package.json` scripts.
 - It does not inspect code ownership or coverage data.
@@ -222,7 +244,6 @@ Read `AGENT_SKILLS.md` for install and usage notes.
 
 ## Roadmap
 
-- Config file for custom command and path rules.
 - SARIF or GitHub annotations mode.
 - Better monorepo package detection.
 - Comment mode behind an explicit opt-in flag.

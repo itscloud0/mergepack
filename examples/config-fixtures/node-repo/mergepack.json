@@ -1,0 +1,12 @@
+{
+  "commands": [
+    "pnpm test -- --runInBand",
+    "pnpm lint"
+  ],
+  "path_roles": [
+    {
+      "pattern": "apps/*/e2e/*.ts",
+      "role": "test"
+    }
+  ]
+}

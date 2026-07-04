@@ -14,6 +14,7 @@ from mergepack.core import (
     collect_instructions,
     detect_commands,
     load_changed_files_from_file,
+    load_config,
     load_diff_from_file,
     load_diff_from_git,
     parse_changed_files,
@@ -24,6 +25,7 @@ from mergepack.render import render_html, render_markdown
 
 
 FIXTURE_ROOT = Path(__file__).resolve().parents[1] / "examples" / "language-fixtures"
+CONFIG_FIXTURE_ROOT = Path(__file__).resolve().parents[1] / "examples" / "config-fixtures"
 
 SAMPLE_DIFF = """diff --git a/src/auth.py b/src/auth.py
 index 7f3a111..89abcde 100644
@@ -139,6 +141,52 @@ index 1111111..2222222 100644
 
         self.assertIn("python -m pytest", commands)
         self.assertNotIn("python -m unittest discover -s tests", commands)
+
+    def test_python_config_fixture_adds_commands_and_path_roles(self) -> None:
+        repo = CONFIG_FIXTURE_ROOT / "python-repo"
+        config = load_config(repo)
+        diff = """diff --git a/checks/sample_case.py b/checks/sample_case.py
+new file mode 100644
+index 0000000..1111111
+--- /dev/null
++++ b/checks/sample_case.py
+@@ -0,0 +1,2 @@
++def test_fixture():
++    assert True
+"""
+
+        packet = build_packet(
+            repo,
+            DiffSource(label="python config diff", diff_text=diff),
+            config=config,
+        )
+
+        self.assertEqual(packet.commands[:2], ["nox -s tests", "python -m ruff check src tests"])
+        self.assertEqual(packet.changed_files[0].role, "test")
+        self.assertIn("python -m compileall src tests", packet.commands)
+
+    def test_node_config_fixture_adds_commands_and_path_roles(self) -> None:
+        repo = CONFIG_FIXTURE_ROOT / "node-repo"
+        config = load_config(repo)
+        diff = """diff --git a/apps/web/e2e/login.ts b/apps/web/e2e/login.ts
+new file mode 100644
+index 0000000..1111111
+--- /dev/null
++++ b/apps/web/e2e/login.ts
+@@ -0,0 +1,2 @@
++test("login", async () => {})
++export {}
+"""
+
+        packet = build_packet(
+            repo,
+            DiffSource(label="node config diff", diff_text=diff),
+            config=config,
+        )
+
+        self.assertEqual(packet.commands[:2], ["pnpm test -- --runInBand", "pnpm lint"])
+        self.assertEqual(packet.changed_files[0].role, "test")
+        self.assertIn("npm test", packet.commands)
 
     def test_language_fixtures_match_expected_packets(self) -> None:
         expected = json.loads((FIXTURE_ROOT / "expected-packets.json").read_text(encoding="utf-8"))
@@ -299,6 +347,51 @@ class CliTests(unittest.TestCase):
             self.assertEqual(payload["stats"]["files"], 2)
             self.assertEqual(payload["stats"]["additions"], 0)
             self.assertIn("Changed-files input limitation", payload["diff_preview"])
+
+    def test_cli_reads_config_for_changed_files(self) -> None:
+        with tempfile.TemporaryDirectory() as raw_tmp:
+            tmp = Path(raw_tmp)
+            changed_path = tmp / "changed-files.txt"
+            config_path = tmp / "mergepack.json"
+            out_path = tmp / "packet.json"
+            changed_path.write_text("custom/check.fixture\nsrc/app.py\n", encoding="utf-8")
+            config_path.write_text(
+                json.dumps(
+                    {
+                        "commands": ["make verify"],
+                        "path_roles": [{"pattern": "custom/*.fixture", "role": "test"}],
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "mergepack",
+                    "--repo",
+                    str(tmp),
+                    "--changed-files",
+                    str(changed_path),
+                    "--config",
+                    str(config_path),
+                    "--format",
+                    "json",
+                    "--output",
+                    str(out_path),
+                ],
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                check=False,
+            )
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            payload = json.loads(out_path.read_text(encoding="utf-8"))
+            roles = {item["path"]: item["role"] for item in payload["changed_files"]}
+            self.assertEqual(payload["commands"][0], "make verify")
+            self.assertEqual(roles["custom/check.fixture"], "test")
 
 
 if __name__ == "__main__":
