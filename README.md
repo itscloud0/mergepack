@@ -38,6 +38,9 @@ Open `examples/mini-mergepack.html`.
 
 The report shows changed files, risk flags, verification commands, repo instructions, checklist items, and a prompt you can paste into a coding agent.
 
+Non-Python fixtures are available under `examples/language-fixtures/` for Go,
+Rust, and Node command-detection coverage.
+
 ## Installation
 
 Requires Python 3.10 or newer. If `python3` is older on your machine, use a newer
@@ -213,7 +216,7 @@ Read `AGENT_SKILLS.md` for install and usage notes.
 - GitHub PR mode requires `gh`.
 - Command detection is best-effort.
 - Changed-files mode has no diff hunks, so additions/deletions are `0` and the packet tells reviewers to inspect the PR diff separately.
-- Python command detection prefers tox/uv and pytest when repo config is present.
+- Python command detection prefers tox/uv and pytest when repo config is present; Go, Rust, and Node command detection uses `go.mod`, `Cargo.toml`, and `package.json` scripts.
 - It does not inspect code ownership or coverage data.
 - It does not redact secrets from arbitrary diffs; do not run it on sensitive patches.
 

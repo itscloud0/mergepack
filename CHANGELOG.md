@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- Added Go, Rust, and Node PR fixtures with expected packet fields for command-detection coverage.
+- Classified common Go and Node test filenames such as `*_test.go` and `*.test.ts` as tests.
+
 ## v0.2.0 - 2026-07-02
 
 - Added `--changed-files` input mode for CI systems that can provide a newline-delimited changed-file list but not a full git diff.

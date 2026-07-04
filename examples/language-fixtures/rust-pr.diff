@@ -1,0 +1,42 @@
+diff --git a/src/lib.rs b/src/lib.rs
+index e77a8d1..66815f4 100644
+--- a/src/lib.rs
++++ b/src/lib.rs
+@@ -1,5 +1,11 @@
+ pub fn normalize(input: &str) -> String {
+-    input.trim().to_string()
++    input
++        .split_whitespace()
++        .collect::<Vec<_>>()
++        .join(" ")
+ }
++pub fn is_empty_after_normalize(input: &str) -> bool {
++    normalize(input).is_empty()
++}
+diff --git a/tests/normalize.rs b/tests/normalize.rs
+new file mode 100644
+index 0000000..6a21329
+--- /dev/null
++++ b/tests/normalize.rs
+@@ -0,0 +1,9 @@
++use mergepack_rust_fixture::{is_empty_after_normalize, normalize};
++
++#[test]
++fn collapses_internal_whitespace() {
++    assert_eq!(normalize(" a   b "), "a b");
++}
++
++#[test]
++fn empty_after_normalize() {
++    assert!(is_empty_after_normalize("   "));
++}
+diff --git a/Cargo.toml b/Cargo.toml
+index 8ea7f23..11547fa 100644
+--- a/Cargo.toml
++++ b/Cargo.toml
+@@ -1,5 +1,5 @@
+ [package]
+ name = "mergepack-rust-fixture"
+ version = "0.1.0"
+-edition = "2018"
++edition = "2021"

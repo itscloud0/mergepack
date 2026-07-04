@@ -23,6 +23,8 @@ from mergepack.core import (
 from mergepack.render import render_html, render_markdown
 
 
+FIXTURE_ROOT = Path(__file__).resolve().parents[1] / "examples" / "language-fixtures"
+
 SAMPLE_DIFF = """diff --git a/src/auth.py b/src/auth.py
 index 7f3a111..89abcde 100644
 --- a/src/auth.py
@@ -55,6 +57,9 @@ class MergepackTests(unittest.TestCase):
     def test_classifies_common_paths(self) -> None:
         self.assertEqual(classify_path("src/app.py"), "source")
         self.assertEqual(classify_path("tests/test_app.py"), "test")
+        self.assertEqual(classify_path("internal/http/health_test.go"), "test")
+        self.assertEqual(classify_path("src/cart.test.ts"), "test")
+        self.assertEqual(classify_path("src/cart.spec.tsx"), "test")
         self.assertEqual(classify_path(".github/workflows/ci.yml"), "ci")
         self.assertEqual(classify_path("pyproject.toml"), "package")
         self.assertEqual(classify_path("docs/usage.md"), "docs")
@@ -134,6 +139,29 @@ index 1111111..2222222 100644
 
         self.assertIn("python -m pytest", commands)
         self.assertNotIn("python -m unittest discover -s tests", commands)
+
+    def test_language_fixtures_match_expected_packets(self) -> None:
+        expected = json.loads((FIXTURE_ROOT / "expected-packets.json").read_text(encoding="utf-8"))
+
+        for name, fixture in expected.items():
+            with self.subTest(language=name):
+                repo = FIXTURE_ROOT / fixture["repo"]
+                diff_path = FIXTURE_ROOT / fixture["diff"]
+                packet = build_packet(
+                    repo,
+                    load_diff_from_file(diff_path),
+                    f"{name} fixture packet",
+                )
+                changed = {
+                    item.path: {"role": item.role, "status": item.status}
+                    for item in packet.changed_files
+                }
+
+                self.assertEqual(packet.commands, fixture["commands"])
+                self.assertEqual(changed, fixture["changed_files"])
+                self.assertIn(fixture["commands"][0], render_markdown(packet))
+                self.assertIn("Dependency/package change", "\n".join(packet.risk_areas))
+                self.assertIn("Check whether changed tests cover", "\n".join(packet.checklist))
 
     def test_instruction_summary_strips_html_hero(self) -> None:
         with tempfile.TemporaryDirectory() as raw_tmp:

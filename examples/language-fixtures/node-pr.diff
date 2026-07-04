@@ -1,0 +1,45 @@
+diff --git a/src/cart.ts b/src/cart.ts
+index 08d977f..e8a59b2 100644
+--- a/src/cart.ts
++++ b/src/cart.ts
+@@ -1,5 +1,11 @@
+ export function total(items: number[]): number {
+-  return items.reduce((sum, item) => sum + item, 0);
++  return items.reduce((sum, item) => {
++    if (item < 0) {
++      throw new Error("cart items must be positive");
++    }
++    return sum + item;
++  }, 0);
+ }
+diff --git a/src/cart.test.ts b/src/cart.test.ts
+new file mode 100644
+index 0000000..b74ad98
+--- /dev/null
++++ b/src/cart.test.ts
+@@ -0,0 +1,11 @@
++import { describe, expect, it } from "vitest";
++import { total } from "./cart";
++
++describe("total", () => {
++  it("adds cart items", () => {
++    expect(total([2, 3])).toBe(5);
++  });
++
++  it("rejects negative line items", () => {
++    expect(() => total([2, -1])).toThrow("positive");
++  });
++});
+diff --git a/package.json b/package.json
+index 977f5b1..64d3066 100644
+--- a/package.json
++++ b/package.json
+@@ -3,7 +3,8 @@
+   "private": true,
+   "scripts": {
+     "test": "vitest run",
+-    "lint": "eslint ."
++    "lint": "eslint .",
++    "typecheck": "tsc --noEmit"
+   }
+ }

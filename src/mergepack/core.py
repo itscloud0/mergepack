@@ -323,10 +323,28 @@ def classify_path(path: str) -> str:
     parts = lowered.split("/")
     name = parts[-1]
     suffix = Path(path).suffix.lower()
+    test_suffixes = (
+        "_test.py",
+        "_test.go",
+        "_test.rs",
+        ".test.js",
+        ".test.jsx",
+        ".test.ts",
+        ".test.tsx",
+        ".spec.js",
+        ".spec.jsx",
+        ".spec.ts",
+        ".spec.tsx",
+    )
 
     if lowered.startswith(".github/workflows/") or "workflow" in parts:
         return "ci"
-    if "test" in parts or "tests" in parts or name.startswith("test_") or name.endswith("_test.py"):
+    if (
+        "test" in parts
+        or "tests" in parts
+        or name.startswith(("test_", "test-"))
+        or name.endswith(test_suffixes)
+    ):
         return "test"
     if name in {"pyproject.toml", "package.json", "package-lock.json", "pnpm-lock.yaml", "yarn.lock", "go.mod", "cargo.toml", "requirements.txt"}:
         return "package"

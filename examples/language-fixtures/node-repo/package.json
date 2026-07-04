@@ -1,0 +1,10 @@
+{
+  "name": "mergepack-node-fixture",
+  "private": true,
+  "scripts": {
+    "test": "vitest run",
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit",
+    "build": "vite build"
+  }
+}

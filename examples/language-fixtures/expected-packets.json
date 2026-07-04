@@ -1,0 +1,32 @@
+{
+  "go": {
+    "repo": "go-repo",
+    "diff": "go-pr.diff",
+    "commands": ["go test ./..."],
+    "changed_files": {
+      "cmd/api/main.go": {"role": "source", "status": "modified"},
+      "internal/http/health_test.go": {"role": "test", "status": "added"},
+      "go.mod": {"role": "package", "status": "modified"}
+    }
+  },
+  "rust": {
+    "repo": "rust-repo",
+    "diff": "rust-pr.diff",
+    "commands": ["cargo test", "cargo build"],
+    "changed_files": {
+      "src/lib.rs": {"role": "source", "status": "modified"},
+      "tests/normalize.rs": {"role": "test", "status": "added"},
+      "Cargo.toml": {"role": "package", "status": "modified"}
+    }
+  },
+  "node": {
+    "repo": "node-repo",
+    "diff": "node-pr.diff",
+    "commands": ["npm test", "npm run lint", "npm run typecheck", "npm run build"],
+    "changed_files": {
+      "src/cart.ts": {"role": "source", "status": "modified"},
+      "src/cart.test.ts": {"role": "test", "status": "added"},
+      "package.json": {"role": "package", "status": "modified"}
+    }
+  }
+}
