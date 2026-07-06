@@ -213,6 +213,72 @@ index 0000000..1111111
         self.assertEqual(packet.changed_files[0].role, "test")
         self.assertIn("npm test", packet.commands)
 
+    def test_detects_package_groups_for_monorepo_changed_files(self) -> None:
+        with tempfile.TemporaryDirectory() as raw_tmp:
+            repo = Path(raw_tmp)
+            (repo / "packages" / "web" / "src").mkdir(parents=True)
+            (repo / "services" / "api" / "src").mkdir(parents=True)
+            (repo / "crates" / "core" / "src").mkdir(parents=True)
+            (repo / "package.json").write_text(
+                json.dumps({"workspaces": ["packages/*"]}),
+                encoding="utf-8",
+            )
+            (repo / "packages" / "web" / "package.json").write_text(
+                json.dumps(
+                    {"name": "@acme/web", "scripts": {"test": "vitest", "lint": "eslint ."}}
+                ),
+                encoding="utf-8",
+            )
+            (repo / "services" / "api" / "pyproject.toml").write_text(
+                "[project]\nname = 'api-service'\n[tool.pytest.ini_options]\n",
+                encoding="utf-8",
+            )
+            (repo / "Cargo.toml").write_text(
+                '[workspace]\nmembers = ["crates/*"]\n',
+                encoding="utf-8",
+            )
+            (repo / "crates" / "core" / "Cargo.toml").write_text(
+                "[package]\nname = 'mergepack-core'\nversion = '0.1.0'\n",
+                encoding="utf-8",
+            )
+            diff = """diff --git a/packages/web/src/cart.ts b/packages/web/src/cart.ts
+index 1111111..2222222 100644
+--- a/packages/web/src/cart.ts
++++ b/packages/web/src/cart.ts
+@@ -1 +1,2 @@
+ export const cart = []
++export const checkout = []
+diff --git a/services/api/src/app.py b/services/api/src/app.py
+index 1111111..2222222 100644
+--- a/services/api/src/app.py
++++ b/services/api/src/app.py
+@@ -1 +1,2 @@
+ def app(): pass
++def health(): return True
+diff --git a/crates/core/src/lib.rs b/crates/core/src/lib.rs
+index 1111111..2222222 100644
+--- a/crates/core/src/lib.rs
++++ b/crates/core/src/lib.rs
+@@ -1 +1,2 @@
+ pub fn run() {}
++pub fn check() {}
+"""
+
+            packet = build_packet(repo, DiffSource(label="monorepo diff", diff_text=diff))
+            groups = {group.path: group for group in packet.package_groups}
+            payload = packet.to_json()
+
+        self.assertEqual(set(groups), {"crates/core", "packages/web", "services/api"})
+        self.assertEqual(groups["packages/web"].name, "@acme/web")
+        self.assertIn("npm test --workspace packages/web", groups["packages/web"].commands)
+        self.assertIn("npm run lint --workspace packages/web", packet.commands)
+        self.assertIn("cd services/api && python -m pytest", groups["services/api"].commands)
+        self.assertIn("cargo test -p mergepack-core", groups["crates/core"].commands)
+        self.assertIn("packages/web/src/cart.ts", groups["packages/web"].changed_files)
+        self.assertEqual(len(payload["package_groups"]), 3)
+        self.assertIn("Package Groups", render_markdown(packet))
+        self.assertIn("mergepack-core", render_html(packet))
+
     def test_language_fixtures_match_expected_packets(self) -> None:
         expected = json.loads((FIXTURE_ROOT / "expected-packets.json").read_text(encoding="utf-8"))
 

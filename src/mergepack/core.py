@@ -41,6 +41,15 @@ class InstructionFile:
     summary: str
 
 
+@dataclass(frozen=True)
+class PackageGroup:
+    name: str
+    path: str
+    ecosystem: str
+    changed_files: tuple[str, ...]
+    commands: tuple[str, ...]
+
+
 VALID_FILE_ROLES = (
     "source",
     "test",
@@ -53,6 +62,22 @@ VALID_FILE_ROLES = (
     "other",
 )
 CONFIG_FILENAMES = (".mergepack.json", "mergepack.json")
+PACKAGE_MANIFESTS = ("package.json", "pyproject.toml", "setup.py", "Cargo.toml")
+MANIFEST_SCAN_SKIP_DIRS = {
+    ".git",
+    ".hg",
+    ".mypy_cache",
+    ".pytest_cache",
+    ".ruff_cache",
+    ".tox",
+    ".venv",
+    "__pycache__",
+    "build",
+    "dist",
+    "node_modules",
+    "target",
+    "venv",
+}
 
 
 @dataclass(frozen=True)
@@ -86,6 +111,7 @@ class MergePacket:
     url: str | None
     changed_files: list[ChangedFile]
     commands: list[str]
+    package_groups: list[PackageGroup]
     risk_areas: list[str]
     instructions: list[InstructionFile]
     checklist: list[str]
@@ -110,6 +136,7 @@ class MergePacket:
             "stats": self.stats,
             "changed_files": [file.__dict__ for file in self.changed_files],
             "commands": self.commands,
+            "package_groups": [group.__dict__ for group in self.package_groups],
             "risk_areas": self.risk_areas,
             "instructions": [item.__dict__ for item in self.instructions],
             "checklist": self.checklist,
@@ -316,7 +343,9 @@ def build_packet(
         raise MergepackError("diff did not contain changed files")
 
     stats = summarize_stats(changed_files)
+    package_groups = detect_package_groups(repo, changed_files)
     commands = detect_commands(repo, changed_files, config)
+    append_package_group_commands(commands, package_groups)
     instructions = collect_instructions(repo)
     risk_areas = detect_risks(changed_files, diff_source.diff_text)
     for limitation in diff_source.limitations:
@@ -329,6 +358,7 @@ def build_packet(
         title=packet_title,
         changed_files=changed_files,
         commands=commands,
+        package_groups=package_groups,
         risk_areas=risk_areas,
         instructions=instructions,
         diff_preview=diff_preview,
@@ -343,6 +373,7 @@ def build_packet(
         url=diff_source.url,
         changed_files=changed_files,
         commands=commands,
+        package_groups=package_groups,
         risk_areas=risk_areas,
         instructions=instructions,
         checklist=checklist,
@@ -568,11 +599,205 @@ def detect_commands(
     return commands
 
 
-def read_package_scripts(path: Path) -> dict[str, str]:
+def append_package_group_commands(commands: list[str], package_groups: list[PackageGroup]) -> None:
+    for group in package_groups:
+        for command in group.commands:
+            if command not in commands:
+                commands.append(command)
+
+
+def detect_package_groups(repo: Path, changed_files: list[ChangedFile]) -> list[PackageGroup]:
+    roots = discover_package_roots(repo)
+    if not roots or not any(root.path != "." for root in roots):
+        return []
+
+    groups_by_path: dict[str, list[str]] = {}
+    sorted_roots = sorted(roots, key=lambda root: (-len(root.path), root.path))
+    for changed_file in changed_files:
+        root = matching_package_root(changed_file.path, sorted_roots)
+        if root is None:
+            continue
+        groups_by_path.setdefault(root.path, []).append(changed_file.path)
+
+    groups: list[PackageGroup] = []
+    for root in sorted(roots, key=lambda item: (item.ecosystem, item.path)):
+        files = groups_by_path.get(root.path)
+        if not files:
+            continue
+        groups.append(
+            PackageGroup(
+                name=root.name,
+                path=root.path,
+                ecosystem=root.ecosystem,
+                changed_files=tuple(sorted(files)),
+                commands=tuple(root.commands),
+            )
+        )
+    return groups
+
+
+@dataclass(frozen=True)
+class PackageRoot:
+    name: str
+    path: str
+    ecosystem: str
+    commands: tuple[str, ...]
+
+
+def discover_package_roots(repo: Path) -> list[PackageRoot]:
+    workspace_paths = discover_npm_workspace_paths(repo)
+    roots: dict[tuple[str, str], PackageRoot] = {}
+
+    for manifest in iter_package_manifests(repo):
+        package_dir = manifest.parent
+        relative = relative_package_path(repo, package_dir)
+        name = infer_package_name(package_dir, manifest)
+        ecosystem = ecosystem_for_manifest(manifest.name)
+        commands = package_commands(repo, package_dir, ecosystem, name, relative, workspace_paths)
+        key = (ecosystem, relative)
+        if commands and key not in roots:
+            roots[key] = PackageRoot(
+                name=name,
+                path=relative,
+                ecosystem=ecosystem,
+                commands=tuple(commands),
+            )
+
+    return list(roots.values())
+
+
+def iter_package_manifests(repo: Path) -> list[Path]:
+    manifests: list[Path] = []
+    for name in PACKAGE_MANIFESTS:
+        for path in repo.rglob(name):
+            try:
+                relative_parts = path.relative_to(repo).parts
+            except ValueError:
+                continue
+            if any(part in MANIFEST_SCAN_SKIP_DIRS for part in relative_parts):
+                continue
+            manifests.append(path)
+    return sorted(manifests, key=lambda path: path.relative_to(repo).as_posix())
+
+
+def ecosystem_for_manifest(name: str) -> str:
+    if name == "package.json":
+        return "npm"
+    if name == "Cargo.toml":
+        return "cargo"
+    return "python"
+
+
+def relative_package_path(repo: Path, package_dir: Path) -> str:
+    try:
+        relative = package_dir.relative_to(repo).as_posix()
+    except ValueError:
+        return str(package_dir)
+    return relative or "."
+
+
+def matching_package_root(path: str, roots: list[PackageRoot]) -> PackageRoot | None:
+    normalized = path.replace("\\", "/")
+    for root in roots:
+        if root.path == "." or normalized == root.path or normalized.startswith(f"{root.path}/"):
+            return root
+    return None
+
+
+def package_commands(
+    repo: Path,
+    package_dir: Path,
+    ecosystem: str,
+    name: str,
+    relative: str,
+    npm_workspace_paths: set[str],
+) -> list[str]:
+    raw_commands = detect_commands(package_dir, [])
+    if raw_commands == ["run the repo's normal test command for the changed files"]:
+        return []
+    if relative == ".":
+        return raw_commands
+    if ecosystem == "npm" and relative in npm_workspace_paths:
+        return [workspace_npm_command(command, relative) for command in raw_commands]
+    if ecosystem == "cargo" and cargo_package_is_workspace_member(repo, package_dir):
+        return [workspace_cargo_command(command, name, relative) for command in raw_commands]
+    return [f"cd {relative} && {command}" for command in raw_commands]
+
+
+def workspace_npm_command(command: str, workspace: str) -> str:
+    if command == "npm test":
+        return f"npm test --workspace {workspace}"
+    if command.startswith("npm run "):
+        return f"{command} --workspace {workspace}"
+    return f"cd {workspace} && {command}"
+
+
+def workspace_cargo_command(command: str, package_name: str, package_path: str) -> str:
+    if package_name and command in {"cargo test", "cargo build"}:
+        action = command.removeprefix("cargo ")
+        return f"cargo {action} -p {package_name}"
+    return f"cd {package_path} && {command}"
+
+
+def cargo_package_is_workspace_member(repo: Path, package_dir: Path) -> bool:
+    if package_dir == repo:
+        return False
+    return "[workspace]" in read_text_safely(repo / "Cargo.toml")
+
+
+def discover_npm_workspace_paths(repo: Path) -> set[str]:
+    package_json = repo / "package.json"
+    data = read_json_object(package_json)
+    raw_workspaces = data.get("workspaces")
+    if isinstance(raw_workspaces, dict):
+        raw_workspaces = raw_workspaces.get("packages")
+    if not isinstance(raw_workspaces, list):
+        return set()
+
+    workspaces: set[str] = set()
+    for raw_pattern in raw_workspaces:
+        if not isinstance(raw_pattern, str) or raw_pattern.startswith("!"):
+            continue
+        pattern = raw_pattern.strip().rstrip("/")
+        if not pattern:
+            continue
+        for package_json_path in repo.glob(f"{pattern}/package.json"):
+            if package_json_path.is_file():
+                workspaces.add(relative_package_path(repo, package_json_path.parent))
+    return workspaces
+
+
+def infer_package_name(package_dir: Path, manifest: Path) -> str:
+    if manifest.name == "package.json":
+        data = read_json_object(manifest)
+        raw_name = data.get("name")
+        if isinstance(raw_name, str) and raw_name.strip():
+            return raw_name.strip()
+    if manifest.name in {"pyproject.toml", "Cargo.toml"}:
+        found = parse_toml_string_value(read_text_safely(manifest), "name")
+        if found:
+            return found
+    return package_dir.name or "."
+
+
+def parse_toml_string_value(text: str, key: str) -> str | None:
+    pattern = re.compile(rf"^\s*{re.escape(key)}\s*=\s*['\"]([^'\"]+)['\"]", re.MULTILINE)
+    match = pattern.search(text)
+    if not match:
+        return None
+    return match.group(1).strip()
+
+
+def read_json_object(path: Path) -> dict[str, object]:
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
     except (json.JSONDecodeError, OSError):
         return {}
+    return data if isinstance(data, dict) else {}
+
+
+def read_package_scripts(path: Path) -> dict[str, str]:
+    data = read_json_object(path)
     scripts = data.get("scripts")
     return scripts if isinstance(scripts, dict) else {}
 
@@ -738,6 +963,7 @@ def build_agent_prompt(
     title: str,
     changed_files: list[ChangedFile],
     commands: list[str],
+    package_groups: list[PackageGroup],
     risk_areas: list[str],
     instructions: list[InstructionFile],
     diff_preview: str,
@@ -747,6 +973,7 @@ def build_agent_prompt(
         for file in changed_files
     )
     command_lines = "\n".join(f"- {command}" for command in commands)
+    package_lines = format_package_groups_for_prompt(package_groups)
     risk_lines = "\n".join(f"- {risk}" for risk in risk_areas)
     instruction_lines = "\n".join(f"- {item.path}: {item.summary}" for item in instructions)
     if not instruction_lines:
@@ -762,6 +989,8 @@ def build_agent_prompt(
         f"{instruction_lines}\n\n"
         "Verification commands to consider:\n"
         f"{command_lines}\n\n"
+        "Package groups:\n"
+        f"{package_lines}\n\n"
         "Risk areas:\n"
         f"{risk_lines}\n\n"
         "Diff preview:\n"
@@ -770,6 +999,19 @@ def build_agent_prompt(
         "```\n\n"
         "Return findings first, then suggested fixes, then exact commands to run."
     )
+
+
+def format_package_groups_for_prompt(package_groups: list[PackageGroup]) -> str:
+    if not package_groups:
+        return "- No package/workspace groups detected by mergepack."
+    lines: list[str] = []
+    for group in package_groups:
+        files = ", ".join(group.changed_files)
+        commands = "; ".join(group.commands) if group.commands else "no package command detected"
+        lines.append(
+            f"- {group.name} ({group.ecosystem}, {group.path}): {files}; commands: {commands}"
+        )
+    return "\n".join(lines)
 
 
 def trim_diff(diff_text: str, max_lines: int) -> str:

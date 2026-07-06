@@ -122,6 +122,18 @@ When `--config` is omitted, mergepack auto-discovers `.mergepack.json` or
 `mergepack.json` in `--repo`. Configured commands appear before detected commands;
 configured path roles override the built-in file-role heuristics for matching paths.
 
+For monorepos, mergepack also groups changed files by detected package or workspace.
+It detects npm workspaces, nested Python packages, and Cargo workspace members from
+existing `package.json`, `pyproject.toml`, `setup.py`, and `Cargo.toml` files. When a
+package has test/build scripts or standard package commands, the packet shows
+package-scoped commands such as:
+
+```text
+npm test --workspace packages/web
+cd services/api && python -m pytest
+cargo test -p mergepack-core
+```
+
 Use GitHub CLI for a public PR:
 
 ```bash
@@ -182,7 +194,7 @@ jobs:
       - uses: actions/checkout@v5
         with:
           fetch-depth: 0
-      - uses: itscloud0/mergepack@v0.4.0
+      - uses: itscloud0/mergepack@v0.5.0
         with:
           base: ${{ github.event.pull_request.base.sha }}
           head: ${{ github.event.pull_request.head.sha }}
@@ -194,7 +206,7 @@ If your workflow already writes a newline-delimited changed-file list, pass it
 instead of `base` / `head`:
 
 ```yaml
-      - uses: itscloud0/mergepack@v0.4.0
+      - uses: itscloud0/mergepack@v0.5.0
         with:
           changed-files: changed-files.txt
           output: MERGEPACK.md
@@ -214,7 +226,7 @@ jobs:
       - uses: actions/checkout@v5
         with:
           fetch-depth: 0
-      - uses: itscloud0/mergepack@v0.4.0
+      - uses: itscloud0/mergepack@v0.5.0
         with:
           base: ${{ github.event.pull_request.base.sha }}
           head: ${{ github.event.pull_request.head.sha }}

@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+## v0.5.0 - 2026-07-06
+
+- Added package/workspace grouping for npm workspaces, nested Python packages, and Cargo workspace members.
+- Added package-scoped verification commands to Markdown, HTML, JSON, and agent prompts.
+
 ## v0.4.0 - 2026-07-06
 
 - Added SARIF output with machine-readable merge risks for GitHub code scanning upload.

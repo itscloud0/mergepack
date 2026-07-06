@@ -34,6 +34,25 @@ def render_markdown(packet: MergePacket) -> str:
     lines.extend(["", "## Verification Commands", ""])
     lines.extend(f"- `{command}`" for command in packet.commands)
 
+    lines.extend(["", "## Package Groups", ""])
+    if packet.package_groups:
+        for group in packet.package_groups:
+            lines.extend(
+                [
+                    f"### {group.name}",
+                    "",
+                    f"- Path: `{group.path}`",
+                    f"- Ecosystem: {group.ecosystem}",
+                    "- Changed files:",
+                ]
+            )
+            lines.extend(f"  - `{path}`" for path in group.changed_files)
+            lines.append("- Commands:")
+            lines.extend(f"  - `{command}`" for command in group.commands)
+            lines.append("")
+    else:
+        lines.append("No package/workspace groups detected by mergepack.")
+
     lines.extend(["", "## Risk Areas", ""])
     lines.extend(f"- {risk}" for risk in packet.risk_areas)
 
@@ -61,6 +80,7 @@ def render_html(packet: MergePacket) -> str:
         for file in packet.changed_files
     )
     command_items = "\n".join(f"<li><code>{escape(command)}</code></li>" for command in packet.commands)
+    package_items = render_package_group_items(packet)
     risk_items = "\n".join(f"<li>{escape(risk)}</li>" for risk in packet.risk_areas)
     instruction_items = "\n".join(
         f"<li><strong>{escape(item.path)}</strong>: {escape(item.summary)}</li>"
@@ -203,6 +223,11 @@ def render_html(packet: MergePacket) -> str:
   </section>
 
   <section>
+    <h2>Package Groups</h2>
+    <div class="panel">{package_items}</div>
+  </section>
+
+  <section>
     <h2>Risk Areas</h2>
     <div class="panel"><ul>{risk_items}</ul></div>
   </section>
@@ -225,6 +250,29 @@ def render_html(packet: MergePacket) -> str:
 </body>
 </html>
 """
+
+
+def render_package_group_items(packet: MergePacket) -> str:
+    if not packet.package_groups:
+        return "<p>No package/workspace groups detected by mergepack.</p>"
+
+    sections: list[str] = []
+    for group in packet.package_groups:
+        file_items = "\n".join(
+            f"<li><code>{escape(path)}</code></li>" for path in group.changed_files
+        )
+        command_items = "\n".join(
+            f"<li><code>{escape(command)}</code></li>" for command in group.commands
+        )
+        sections.append(
+            "<section class='package-group'>"
+            f"<h3>{escape(group.name)}</h3>"
+            f"<p><code>{escape(group.path)}</code> - {escape(group.ecosystem)}</p>"
+            f"<h4>Changed files</h4><ul>{file_items}</ul>"
+            f"<h4>Commands</h4><ul>{command_items}</ul>"
+            "</section>"
+        )
+    return "\n".join(sections)
 
 
 def render_sarif(packet: MergePacket) -> str:
