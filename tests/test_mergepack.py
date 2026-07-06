@@ -21,7 +21,7 @@ from mergepack.core import (
     parse_changed_file_list,
     parse_pr_spec,
 )
-from mergepack.render import render_html, render_markdown
+from mergepack.render import render_html, render_markdown, render_sarif
 
 
 FIXTURE_ROOT = Path(__file__).resolve().parents[1] / "examples" / "language-fixtures"
@@ -100,6 +100,31 @@ class MergepackTests(unittest.TestCase):
             encoded = json.dumps(packet.to_json())
         self.assertIn("changed_files", encoded)
         self.assertIn("high_risk", encoded)
+
+    def test_sarif_shape_maps_risk_to_changed_files(self) -> None:
+        with tempfile.TemporaryDirectory() as raw_tmp:
+            repo = Path(raw_tmp)
+            packet = build_packet(
+                repo,
+                DiffSource(label="sample diff", diff_text=SAMPLE_DIFF),
+                "SARIF packet",
+            )
+            payload = json.loads(render_sarif(packet))
+
+        run = payload["runs"][0]
+        results = run["results"]
+        rule_ids = {item["ruleId"] for item in results}
+        result_paths = {
+            item["locations"][0]["physicalLocation"]["artifactLocation"]["uri"]
+            for item in results
+        }
+
+        self.assertEqual(payload["version"], "2.1.0")
+        self.assertIn("mergepack.ci", rule_ids)
+        self.assertIn("mergepack.security-path", rule_ids)
+        self.assertIn(".github/workflows/ci.yml", result_paths)
+        self.assertIn("src/auth.py", result_paths)
+        self.assertTrue(run["tool"]["driver"]["rules"])
 
     def test_tox_env_section_does_not_trigger_secret_risk(self) -> None:
         diff = """diff --git a/pyproject.toml b/pyproject.toml
@@ -347,6 +372,39 @@ class CliTests(unittest.TestCase):
             self.assertEqual(payload["stats"]["files"], 2)
             self.assertEqual(payload["stats"]["additions"], 0)
             self.assertIn("Changed-files input limitation", payload["diff_preview"])
+
+    def test_cli_writes_sarif_from_diff_file(self) -> None:
+        with tempfile.TemporaryDirectory() as raw_tmp:
+            tmp = Path(raw_tmp)
+            diff_path = tmp / "sample.diff"
+            out_path = tmp / "mergepack.sarif"
+            diff_path.write_text(SAMPLE_DIFF, encoding="utf-8")
+
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "mergepack",
+                    "--repo",
+                    str(tmp),
+                    "--diff-file",
+                    str(diff_path),
+                    "--format",
+                    "sarif",
+                    "--output",
+                    str(out_path),
+                ],
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                check=False,
+            )
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            payload = json.loads(out_path.read_text(encoding="utf-8"))
+            self.assertEqual(payload["version"], "2.1.0")
+            self.assertEqual(payload["runs"][0]["tool"]["driver"]["name"], "mergepack")
+            self.assertTrue(payload["runs"][0]["results"])
 
     def test_cli_reads_config_for_changed_files(self) -> None:
         with tempfile.TemporaryDirectory() as raw_tmp:

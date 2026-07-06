@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+import json
 from html import escape
 
-from .core import MergePacket
+from .core import ChangedFile, MergePacket
 
 
 def render_markdown(packet: MergePacket) -> str:
@@ -224,3 +225,122 @@ def render_html(packet: MergePacket) -> str:
 </body>
 </html>
 """
+
+
+def render_sarif(packet: MergePacket) -> str:
+    rules: dict[str, dict[str, object]] = {}
+    results: list[dict[str, object]] = []
+
+    for risk in packet.risk_areas:
+        rule, level = sarif_rule_for_risk(risk)
+        rule_id = str(rule["id"])
+        if rule_id == "mergepack.no-risk":
+            continue
+        rules.setdefault(rule_id, rule)
+        for file in sarif_files_for_risk(packet, risk):
+            results.append(
+                {
+                    "ruleId": rule_id,
+                    "level": level,
+                    "message": {"text": risk},
+                    "locations": [
+                        {
+                            "physicalLocation": {
+                                "artifactLocation": {
+                                    "uri": file.path.replace("\\", "/"),
+                                },
+                                "region": {"startLine": 1},
+                            },
+                            "properties": {
+                                "mergepackRole": file.role,
+                                "mergepackStatus": file.status,
+                            },
+                        }
+                    ],
+                    "partialFingerprints": {
+                        "mergepackRisk": f"{rule_id}:{file.path}:{risk}",
+                    },
+                }
+            )
+
+    payload = {
+        "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
+        "version": "2.1.0",
+        "runs": [
+            {
+                "tool": {
+                    "driver": {
+                        "name": "mergepack",
+                        "informationUri": "https://github.com/itscloud0/mergepack",
+                        "rules": list(rules.values()),
+                    }
+                },
+                "invocations": [{"executionSuccessful": True}],
+                "results": results,
+            }
+        ],
+    }
+    return json.dumps(payload, indent=2, sort_keys=True) + "\n"
+
+
+def sarif_rule_for_risk(risk: str) -> tuple[dict[str, object], str]:
+    if risk.startswith("Migration change"):
+        return sarif_rule("mergepack.migration", "Migration change", risk), "warning"
+    if risk.startswith("Dependency/package change"):
+        return sarif_rule("mergepack.package", "Dependency or package change", risk), "warning"
+    if risk.startswith("CI workflow change"):
+        return sarif_rule("mergepack.ci", "CI workflow change", risk), "warning"
+    if risk.startswith("Auth/security-adjacent path touched"):
+        return sarif_rule("mergepack.security-path", "Security-adjacent path", risk), "warning"
+    if risk.startswith("Sensitive-looking text appears"):
+        return (
+            sarif_rule("mergepack.sensitive-diff", "Sensitive-looking diff text", risk),
+            "warning",
+        )
+    if risk.startswith("Source changed without"):
+        return (
+            sarif_rule("mergepack.source-without-tests", "Source without test change", risk),
+            "note",
+        )
+    if risk.startswith("Changed-files input limitation"):
+        return (
+            sarif_rule("mergepack.changed-files-limitation", "Changed-files limitation", risk),
+            "note",
+        )
+    if risk.startswith("No high-risk pattern detected"):
+        return sarif_rule("mergepack.no-risk", "No high-risk pattern", risk), "none"
+    return sarif_rule("mergepack.risk", "Mergepack risk", risk), "note"
+
+
+def sarif_rule(rule_id: str, name: str, description: str) -> dict[str, object]:
+    return {
+        "id": rule_id,
+        "name": name,
+        "shortDescription": {"text": name},
+        "fullDescription": {"text": description},
+        "helpUri": "https://github.com/itscloud0/mergepack",
+    }
+
+
+def sarif_files_for_risk(packet: MergePacket, risk: str) -> list[ChangedFile]:
+    if risk.startswith("Migration change"):
+        return files_by_role(packet, "migration")
+    if risk.startswith("Dependency/package change"):
+        return files_by_role(packet, "package")
+    if risk.startswith("CI workflow change"):
+        return files_by_role(packet, "ci")
+    if risk.startswith("Auth/security-adjacent path touched"):
+        markers = ("auth", "login", "token", "secret", "password", "permission")
+        matches = [
+            file
+            for file in packet.changed_files
+            if any(marker in file.path.lower() for marker in markers)
+        ]
+        return matches or packet.changed_files[:1]
+    if risk.startswith("Source changed without"):
+        return files_by_role(packet, "source")
+    return packet.changed_files or []
+
+
+def files_by_role(packet: MergePacket, role: str) -> list[ChangedFile]:
+    return [file for file in packet.changed_files if file.role == role] or packet.changed_files[:1]

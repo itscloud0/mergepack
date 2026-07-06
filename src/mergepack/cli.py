@@ -14,7 +14,7 @@ from .core import (
     load_diff_from_git,
     load_diff_from_pr,
 )
-from .render import render_html, render_markdown
+from .render import render_html, render_markdown, render_sarif
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -57,7 +57,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--format",
-        choices=["markdown", "json", "html"],
+        choices=["markdown", "json", "html", "sarif"],
         default="markdown",
         help="Output format. Default: markdown",
     )
@@ -115,6 +115,8 @@ def main(argv: list[str] | None = None) -> int:
         rendered = json.dumps(packet.to_json(), indent=2, sort_keys=True) + "\n"
     elif args.format == "html":
         rendered = render_html(packet)
+    elif args.format == "sarif":
+        rendered = render_sarif(packet)
     else:
         rendered = render_markdown(packet)
 

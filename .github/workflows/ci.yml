@@ -30,3 +30,7 @@ jobs:
         run: |
           mergepack --diff-file examples/sample-pr.diff --repo examples/mini-repo --format json --output /tmp/mergepack.json
           python -m json.tool /tmp/mergepack.json
+      - name: SARIF smoke
+        run: |
+          mergepack --diff-file examples/sample-pr.diff --repo examples/mini-repo --format sarif --output /tmp/mergepack.sarif
+          python -m json.tool /tmp/mergepack.sarif

@@ -24,7 +24,7 @@ inputs:
     required: false
     default: ""
   format:
-    description: "Output format: markdown, json, or html."
+    description: "Output format: markdown, json, html, or sarif."
     required: false
     default: "markdown"
   output:

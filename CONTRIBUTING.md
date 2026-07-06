@@ -18,6 +18,8 @@ python -m compileall src tests
 mergepack --diff-file examples/sample-pr.diff --repo examples/mini-repo --output /tmp/MERGEPACK.md
 mergepack --diff-file examples/sample-pr.diff --repo examples/mini-repo --format json --output /tmp/mergepack.json
 python -m json.tool /tmp/mergepack.json
+mergepack --diff-file examples/sample-pr.diff --repo examples/mini-repo --format sarif --output /tmp/mergepack.sarif
+python -m json.tool /tmp/mergepack.sarif
 ```
 
 ## Project Direction

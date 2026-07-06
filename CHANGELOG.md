@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+## v0.4.0 - 2026-07-06
+
+- Added SARIF output with machine-readable merge risks for GitHub code scanning upload.
+- Added CLI/action docs and CI smoke coverage for SARIF packets.
+
 ## v0.3.0 - 2026-07-04
 
 - Added Go, Rust, and Node PR fixtures with expected packet fields for command-detection coverage.
