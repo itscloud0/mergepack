@@ -35,6 +35,10 @@ inputs:
     description: Upload the generated packet as a workflow artifact.
     required: false
     default: "true"
+  pr-comment:
+    description: Post or update a mergepack link comment on pull requests. Disabled by default.
+    required: false
+    default: "false"
 
 runs:
   using: composite
@@ -71,3 +75,68 @@ runs:
       with:
         name: mergepack
         path: ${{ inputs.output }}
+    - name: Reject PR comment mode outside pull requests
+      if: inputs.pr-comment == 'true' && github.event_name != 'pull_request'
+      shell: bash
+      run: |
+        echo "::error::mergepack pr-comment mode only runs on pull_request events"
+        exit 1
+    - name: Comment on pull request
+      if: inputs.pr-comment == 'true' && github.event_name == 'pull_request'
+      shell: bash
+      env:
+        GH_TOKEN: ${{ github.token }}
+        MERGEPACK_FORMAT: ${{ inputs.format }}
+        MERGEPACK_OUTPUT: ${{ inputs.output }}
+      run: |
+        set -euo pipefail
+
+        if ! command -v gh >/dev/null 2>&1; then
+          echo "::error::mergepack pr-comment mode requires GitHub CLI (gh)"
+          exit 1
+        fi
+
+        marker="<!-- mergepack-pr-comment -->"
+        run_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+        comment_file="$(mktemp)"
+        comments_file="$(mktemp)"
+        payload_file="$(mktemp)"
+        trap 'rm -f "$comment_file" "$comments_file" "$payload_file"' EXIT
+
+        {
+          printf '%s\n' "$marker"
+          printf '### mergepack\n\n'
+          printf 'Generated a `%s` merge packet for this pull request.\n\n' "$MERGEPACK_FORMAT"
+          printf -- '- Output path: `%s`\n' "$MERGEPACK_OUTPUT"
+          printf -- '- Workflow run: %s\n\n' "$run_url"
+          printf 'When `upload-artifact` is `true`, download the packet from the workflow run artifacts.\n'
+        } > "$comment_file"
+
+        gh api "repos/${GITHUB_REPOSITORY}/issues/${{ github.event.pull_request.number }}/comments?per_page=100" > "$comments_file"
+        comment_id="$(
+          python3 - "$comments_file" "$marker" <<'PY'
+        import json
+        import sys
+
+        with open(sys.argv[1], encoding="utf-8") as handle:
+            comments = json.load(handle)
+        marker = sys.argv[2]
+        for comment in comments:
+            if marker in (comment.get("body") or ""):
+                print(comment["id"])
+                break
+        PY
+        )"
+        python3 - "$comment_file" > "$payload_file" <<'PY'
+        import json
+        import sys
+
+        with open(sys.argv[1], encoding="utf-8") as handle:
+            print(json.dumps({"body": handle.read()}))
+        PY
+
+        if [ -n "$comment_id" ]; then
+          gh api --method PATCH "repos/${GITHUB_REPOSITORY}/issues/comments/${comment_id}" --input "$payload_file" > /dev/null
+        else
+          gh api --method POST "repos/${GITHUB_REPOSITORY}/issues/${{ github.event.pull_request.number }}/comments" --input "$payload_file" > /dev/null
+        fi

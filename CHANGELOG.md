@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+## v0.6.0 - 2026-07-07
+
+- Added disabled-by-default GitHub Action `pr-comment` mode that posts or updates a pull request comment with a mergepack workflow-run link.
+- Documented the required `pull-requests: write` permission for PR comment mode.
+
 ## v0.5.0 - 2026-07-06
 
 - Added package/workspace grouping for npm workspaces, nested Python packages, and Cargo workspace members.

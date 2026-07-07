@@ -26,6 +26,7 @@ from mergepack.render import render_html, render_markdown, render_sarif
 
 FIXTURE_ROOT = Path(__file__).resolve().parents[1] / "examples" / "language-fixtures"
 CONFIG_FIXTURE_ROOT = Path(__file__).resolve().parents[1] / "examples" / "config-fixtures"
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
 SAMPLE_DIFF = """diff --git a/src/auth.py b/src/auth.py
 index 7f3a111..89abcde 100644
@@ -516,6 +517,19 @@ class CliTests(unittest.TestCase):
             roles = {item["path"]: item["role"] for item in payload["changed_files"]}
             self.assertEqual(payload["commands"][0], "make verify")
             self.assertEqual(roles["custom/check.fixture"], "test")
+
+
+class ActionMetadataTests(unittest.TestCase):
+    def test_pr_comment_mode_is_explicit_opt_in(self) -> None:
+        action = (PROJECT_ROOT / "action.yml").read_text(encoding="utf-8")
+        readme = (PROJECT_ROOT / "README.md").read_text(encoding="utf-8")
+
+        self.assertIn("pr-comment:", action)
+        self.assertIn('default: "false"', action)
+        self.assertIn("inputs.pr-comment == 'true'", action)
+        self.assertIn("github.event_name == 'pull_request'", action)
+        self.assertIn("mergepack-pr-comment", action)
+        self.assertIn("pull-requests: write", readme)
 
 
 if __name__ == "__main__":
