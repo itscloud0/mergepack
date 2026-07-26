@@ -312,7 +312,6 @@ Read `AGENT_SKILLS.md` for install and usage notes.
 ## Roadmap
 
 - Better monorepo package detection.
-- Comment mode behind an explicit opt-in flag.
 - Real PR metadata and review-comment packing.
 
 ## Contributing
