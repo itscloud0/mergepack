@@ -52,6 +52,20 @@ From a checkout:
 python -m pip install .
 ```
 
+To install the public release without cloning the repository:
+
+```bash
+uv tool install "git+https://github.com/itscloud0/mergepack@v0.6.0"
+mergepack --help
+```
+
+For a one-off packet without a persistent install:
+
+```bash
+uvx --from "git+https://github.com/itscloud0/mergepack@v0.6.0" \
+  mergepack --base origin/main --head HEAD --output MERGEPACK.md
+```
+
 For an isolated tryout:
 
 ```bash
