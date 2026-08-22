@@ -144,9 +144,10 @@ When `--config` is omitted, mergepack auto-discovers `.mergepack.json` or
 configured path roles override the built-in file-role heuristics for matching paths.
 
 For monorepos, mergepack also groups changed files by detected package or workspace.
-It detects npm workspaces, nested Python packages, and Cargo workspace members from
-existing `package.json`, `pyproject.toml`, `setup.py`, and `Cargo.toml` files. When a
-package has test/build scripts or standard package commands, the packet shows
+It detects npm workspaces, nested Python packages, Cargo workspace members, and nested
+Go modules from existing `package.json`, `pyproject.toml`, `setup.py`, `Cargo.toml`, and
+`go.mod` files. When a package has test/build scripts or standard package commands, the
+packet shows
 package-scoped commands such as:
 
 ```text
@@ -332,7 +333,7 @@ Read `AGENT_SKILLS.md` for install and usage notes.
 
 ## Roadmap
 
-- Better monorepo package detection.
+- Workspace metadata for additional build systems.
 - Real PR metadata and review-comment packing.
 
 ## Contributing

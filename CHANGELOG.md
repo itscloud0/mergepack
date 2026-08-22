@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Added package grouping and module-scoped `go test ./...` commands for nested Go modules.
+
 ## v0.6.0 - 2026-07-07
 
 - Added disabled-by-default GitHub Action `pr-comment` mode that posts or updates a pull request comment with a mergepack workflow-run link.

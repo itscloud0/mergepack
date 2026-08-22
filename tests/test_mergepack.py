@@ -280,6 +280,34 @@ index 1111111..2222222 100644
         self.assertIn("Package Groups", render_markdown(packet))
         self.assertIn("mergepack-core", render_html(packet))
 
+    def test_detects_nested_go_module_package_group(self) -> None:
+        with tempfile.TemporaryDirectory() as raw_tmp:
+            repo = Path(raw_tmp)
+            module = repo / "services" / "worker"
+            module.mkdir(parents=True)
+            (module / "go.mod").write_text(
+                "module example.com/worker\n\ngo 1.22\n",
+                encoding="utf-8",
+            )
+            diff = """diff --git a/services/worker/main.go b/services/worker/main.go
+index 1111111..2222222 100644
+--- a/services/worker/main.go
++++ b/services/worker/main.go
+@@ -1 +1,2 @@
+ package main
++func main() {}
+"""
+
+            packet = build_packet(repo, DiffSource(label="go monorepo diff", diff_text=diff))
+
+        self.assertEqual(len(packet.package_groups), 1)
+        group = packet.package_groups[0]
+        self.assertEqual(group.name, "example.com/worker")
+        self.assertEqual(group.path, "services/worker")
+        self.assertEqual(group.ecosystem, "go")
+        self.assertEqual(group.commands, ("cd services/worker && go test ./...",))
+        self.assertIn("cd services/worker && go test ./...", packet.commands)
+
     def test_language_fixtures_match_expected_packets(self) -> None:
         expected = json.loads((FIXTURE_ROOT / "expected-packets.json").read_text(encoding="utf-8"))
 

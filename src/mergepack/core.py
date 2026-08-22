@@ -62,7 +62,7 @@ VALID_FILE_ROLES = (
     "other",
 )
 CONFIG_FILENAMES = (".mergepack.json", "mergepack.json")
-PACKAGE_MANIFESTS = ("package.json", "pyproject.toml", "setup.py", "Cargo.toml")
+PACKAGE_MANIFESTS = ("package.json", "pyproject.toml", "setup.py", "Cargo.toml", "go.mod")
 MANIFEST_SCAN_SKIP_DIRS = {
     ".git",
     ".hg",
@@ -685,6 +685,8 @@ def ecosystem_for_manifest(name: str) -> str:
         return "npm"
     if name == "Cargo.toml":
         return "cargo"
+    if name == "go.mod":
+        return "go"
     return "python"
 
 
@@ -777,7 +779,16 @@ def infer_package_name(package_dir: Path, manifest: Path) -> str:
         found = parse_toml_string_value(read_text_safely(manifest), "name")
         if found:
             return found
+    if manifest.name == "go.mod":
+        found = parse_go_module_path(read_text_safely(manifest))
+        if found:
+            return found
     return package_dir.name or "."
+
+
+def parse_go_module_path(text: str) -> str | None:
+    match = re.search(r"^\s*module\s+([^\s]+)\s*$", text, re.MULTILINE)
+    return match.group(1).strip() if match else None
 
 
 def parse_toml_string_value(text: str, key: str) -> str | None:
