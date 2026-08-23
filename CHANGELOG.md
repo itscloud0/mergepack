@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## v0.7.1 - 2026-08-23
+
+- Fixed release verification on Python 3.10 by keeping the version-alignment test stdlib-compatible.
+
 ## v0.7.0 - 2026-08-23
 
 - Added package grouping and module-scoped `go test ./...` commands for nested Go modules.

@@ -1,10 +1,10 @@
 from __future__ import annotations
 
 import json
+import re
 import subprocess
 import sys
 import tempfile
-import tomllib
 import unittest
 from pathlib import Path
 
@@ -60,8 +60,11 @@ index 1111111..2222222 100644
 
 class MergepackTests(unittest.TestCase):
     def test_runtime_version_matches_project_metadata(self) -> None:
-        metadata = tomllib.loads((PROJECT_ROOT / "pyproject.toml").read_text(encoding="utf-8"))
-        self.assertEqual(__version__, metadata["project"]["version"])
+        project_text = (PROJECT_ROOT / "pyproject.toml").read_text(encoding="utf-8")
+        match = re.search(r'^version = "([^"]+)"$', project_text, re.MULTILINE)
+        self.assertIsNotNone(match)
+        assert match is not None
+        self.assertEqual(__version__, match.group(1))
 
     def test_classifies_common_paths(self) -> None:
         self.assertEqual(classify_path("src/app.py"), "source")
