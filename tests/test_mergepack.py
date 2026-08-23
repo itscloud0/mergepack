@@ -4,9 +4,11 @@ import json
 import subprocess
 import sys
 import tempfile
+import tomllib
 import unittest
 from pathlib import Path
 
+from mergepack import __version__
 from mergepack.core import (
     DiffSource,
     build_packet,
@@ -57,6 +59,10 @@ index 1111111..2222222 100644
 
 
 class MergepackTests(unittest.TestCase):
+    def test_runtime_version_matches_project_metadata(self) -> None:
+        metadata = tomllib.loads((PROJECT_ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+        self.assertEqual(__version__, metadata["project"]["version"])
+
     def test_classifies_common_paths(self) -> None:
         self.assertEqual(classify_path("src/app.py"), "source")
         self.assertEqual(classify_path("tests/test_app.py"), "test")

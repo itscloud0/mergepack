@@ -2,7 +2,10 @@
 
 ## Unreleased
 
+## v0.7.0 - 2026-08-23
+
 - Added package grouping and module-scoped `go test ./...` commands for nested Go modules.
+- Fixed runtime package version metadata so installed code reports the packaged release.
 
 ## v0.6.0 - 2026-07-07
 
