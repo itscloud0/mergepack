@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Pinned external GitHub Action dependencies in workflows, the composite action, and documented examples to immutable commits, with regression coverage against tag drift.
+
 ## v0.7.1 - 2026-08-23
 
 - Fixed release verification on Python 3.10 by keeping the version-alignment test stdlib-compatible.

@@ -66,6 +66,22 @@ class MergepackTests(unittest.TestCase):
         assert match is not None
         self.assertEqual(__version__, match.group(1))
 
+    def test_external_action_refs_are_immutable(self) -> None:
+        action_files = sorted((PROJECT_ROOT / ".github" / "workflows").glob("*"))
+        action_files.append(PROJECT_ROOT / "action.yml")
+        mutable_refs = []
+
+        for path in action_files:
+            for line_number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+                match = re.search(r"\buses:\s*([^\s#]+)", line)
+                if not match or match.group(1).startswith(("./", "../")):
+                    continue
+                ref = match.group(1).rsplit("@", 1)[-1]
+                if re.fullmatch(r"[0-9a-f]{40}", ref) is None:
+                    mutable_refs.append(f"{path.relative_to(PROJECT_ROOT)}:{line_number} {ref}")
+
+        self.assertEqual(mutable_refs, [], "mutable external action refs: " + ", ".join(mutable_refs))
+
     def test_classifies_common_paths(self) -> None:
         self.assertEqual(classify_path("src/app.py"), "source")
         self.assertEqual(classify_path("tests/test_app.py"), "test")

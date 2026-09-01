@@ -213,7 +213,7 @@ jobs:
   packet:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
           fetch-depth: 0
       - uses: itscloud0/mergepack@v0.7.1
@@ -245,7 +245,7 @@ jobs:
   packet:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
           fetch-depth: 0
       - uses: itscloud0/mergepack@v0.7.1
@@ -254,7 +254,7 @@ jobs:
           head: ${{ github.event.pull_request.head.sha }}
           format: sarif
           output: mergepack.sarif
-      - uses: github/codeql-action/upload-sarif@v3
+      - uses: github/codeql-action/upload-sarif@5ba2889ada762081db2c4f32a729827dce632c7b # v3
         with:
           sarif_file: mergepack.sarif
 ```
@@ -270,7 +270,7 @@ jobs:
   packet:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
           fetch-depth: 0
       - uses: itscloud0/mergepack@v0.7.1
