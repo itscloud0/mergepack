@@ -52,6 +52,18 @@ From a checkout:
 python -m pip install .
 ```
 
+To install the exact `v0.7.1` release artifacts without Git or PyPI:
+
+```bash
+python -m pip install "https://github.com/itscloud0/mergepack/releases/download/v0.7.1/mergepack-0.7.1-py3-none-any.whl"
+```
+
+Or use the source distribution:
+
+```bash
+python -m pip install "https://github.com/itscloud0/mergepack/releases/download/v0.7.1/mergepack-0.7.1.tar.gz"
+```
+
 To install the public release without cloning the repository:
 
 ```bash

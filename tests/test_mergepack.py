@@ -573,6 +573,20 @@ class CliTests(unittest.TestCase):
 
 
 class ActionMetadataTests(unittest.TestCase):
+    def test_readme_documents_exact_release_artifact_urls(self) -> None:
+        readme = (PROJECT_ROOT / "README.md").read_text(encoding="utf-8")
+
+        self.assertIn(
+            "https://github.com/itscloud0/mergepack/releases/download/"
+            "v0.7.1/mergepack-0.7.1-py3-none-any.whl",
+            readme,
+        )
+        self.assertIn(
+            "https://github.com/itscloud0/mergepack/releases/download/"
+            "v0.7.1/mergepack-0.7.1.tar.gz",
+            readme,
+        )
+
     def test_pr_comment_mode_is_explicit_opt_in(self) -> None:
         action = (PROJECT_ROOT / "action.yml").read_text(encoding="utf-8")
         readme = (PROJECT_ROOT / "README.md").read_text(encoding="utf-8")

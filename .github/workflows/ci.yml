@@ -34,3 +34,18 @@ jobs:
         run: |
           mergepack --diff-file examples/sample-pr.diff --repo examples/mini-repo --format sarif --output /tmp/mergepack.sarif
           python -m json.tool /tmp/mergepack.sarif
+
+  public-install:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: "3.10"
+      - name: Install released wheel without checkout
+        run: >-
+          python -m pip install --no-deps
+          https://github.com/itscloud0/mergepack/releases/download/v0.7.1/mergepack-0.7.1-py3-none-any.whl
+      - name: CLI smoke
+        run: |
+          python -c "import mergepack; assert mergepack.__version__ == '0.7.1'"
+          mergepack --help
