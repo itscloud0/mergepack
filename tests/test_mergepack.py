@@ -119,6 +119,50 @@ class MergepackTests(unittest.TestCase):
         self.assertIn("Agent-Ready Prompt", render_markdown(packet))
         self.assertIn("<table>", render_html(packet))
 
+    def test_pr_description_is_preserved_in_packet_outputs(self) -> None:
+        description = (
+            "Why:\n\nFixes the checkout path.\n\n"
+            "<script>alert(1)</script> & keep this context\n"
+            "```text\nkeep this context\n```"
+        )
+        with tempfile.TemporaryDirectory() as raw_tmp:
+            repo = Path(raw_tmp)
+            packet = build_packet(
+                repo,
+                DiffSource(
+                    label="GitHub PR owner/repo#12",
+                    diff_text=SAMPLE_DIFF,
+                    title="Fix checkout path",
+                    body=description,
+                    url="https://github.com/owner/repo/pull/12",
+                ),
+            )
+            markdown = render_markdown(packet)
+            html = render_html(packet)
+            payload = packet.to_json()
+
+        self.assertEqual(packet.pull_request_body, description)
+        self.assertIn("## Pull Request Description", markdown)
+        self.assertIn("> Fixes the checkout path.", markdown)
+        self.assertIn("keep this context", html)
+        self.assertIn("&lt;script&gt;alert(1)&lt;/script&gt; &amp;", html)
+        self.assertNotIn("<script>alert(1)</script>", html)
+        self.assertIn("pull_request_body", payload)
+        self.assertEqual(payload["pull_request_body"], description)
+        self.assertIn("Pull request description:", packet.agent_prompt)
+        self.assertIn("> Fixes the checkout path.", packet.agent_prompt)
+
+    def test_empty_pr_description_is_omitted(self) -> None:
+        with tempfile.TemporaryDirectory() as raw_tmp:
+            packet = build_packet(
+                Path(raw_tmp),
+                DiffSource(label="GitHub PR owner/repo#12", diff_text=SAMPLE_DIFF, body="  \n"),
+            )
+
+        self.assertIsNone(packet.pull_request_body)
+        self.assertNotIn("## Pull Request Description", render_markdown(packet))
+        self.assertNotIn("<h2>Pull Request Description</h2>", render_html(packet))
+
     def test_json_shape_is_serializable(self) -> None:
         with tempfile.TemporaryDirectory() as raw_tmp:
             repo = Path(raw_tmp)

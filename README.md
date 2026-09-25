@@ -174,7 +174,9 @@ Use GitHub CLI for a public PR:
 mergepack --pr owner/repo#123 --repo . --output MERGEPACK.md
 ```
 
-`--pr` requires `gh` and uses `gh pr view` plus `gh pr diff`.
+`--pr` requires `gh` and uses `gh pr view` plus `gh pr diff`. The generated
+packet preserves the PR title and description so the review intent stays with
+the diff in Markdown, JSON, HTML, and the agent-ready prompt.
 
 ## Output Example
 
@@ -346,7 +348,7 @@ Read `AGENT_SKILLS.md` for install and usage notes.
 ## Roadmap
 
 - Workspace metadata for additional build systems.
-- Real PR metadata and review-comment packing.
+- Review-comment packing for GitHub PRs.
 
 ## Contributing
 

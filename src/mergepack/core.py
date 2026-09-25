@@ -109,6 +109,7 @@ class MergePacket:
     base: str | None
     head: str | None
     url: str | None
+    pull_request_body: str | None
     changed_files: list[ChangedFile]
     commands: list[str]
     package_groups: list[PackageGroup]
@@ -133,6 +134,7 @@ class MergePacket:
             "base": self.base,
             "head": self.head,
             "url": self.url,
+            "pull_request_body": self.pull_request_body,
             "stats": self.stats,
             "changed_files": [file.__dict__ for file in self.changed_files],
             "commands": self.commands,
@@ -354,8 +356,12 @@ def build_packet(
     checklist = build_checklist(changed_files, commands, risk_areas)
     diff_preview = build_diff_preview(diff_source, max_diff_lines)
     packet_title = title or diff_source.title or f"Merge packet for {diff_source.label}"
+    pull_request_body = (
+        diff_source.body.strip() if diff_source.body and diff_source.body.strip() else None
+    )
     prompt = build_agent_prompt(
         title=packet_title,
+        pull_request_body=pull_request_body,
         changed_files=changed_files,
         commands=commands,
         package_groups=package_groups,
@@ -371,6 +377,7 @@ def build_packet(
         base=diff_source.base,
         head=diff_source.head,
         url=diff_source.url,
+        pull_request_body=pull_request_body,
         changed_files=changed_files,
         commands=commands,
         package_groups=package_groups,
@@ -972,6 +979,7 @@ def build_checklist(
 
 def build_agent_prompt(
     title: str,
+    pull_request_body: str | None,
     changed_files: list[ChangedFile],
     commands: list[str],
     package_groups: list[PackageGroup],
@@ -989,11 +997,19 @@ def build_agent_prompt(
     instruction_lines = "\n".join(f"- {item.path}: {item.summary}" for item in instructions)
     if not instruction_lines:
         instruction_lines = "- No repo instruction files found by mergepack."
+    if pull_request_body:
+        pull_request_lines = "\n".join(
+            f"> {line}" if line else ">" for line in pull_request_body.splitlines()
+        )
+    else:
+        pull_request_lines = "- No PR description supplied."
 
     return (
         f"You are reviewing this pull request: {title}\n\n"
         "Use the repository instructions and changed-file map below. Focus on correctness, "
         "tests, regressions, and merge risk. Do not rewrite unrelated code.\n\n"
+        "Pull request description:\n"
+        f"{pull_request_lines}\n\n"
         "Changed files:\n"
         f"{file_lines}\n\n"
         "Repo instructions:\n"

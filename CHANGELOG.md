@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Preserve GitHub PR descriptions in generated Markdown, JSON, HTML, and agent-ready packets.
 - Pinned external GitHub Action dependencies in workflows, the composite action, and documented examples to immutable commits, with regression coverage against tag drift.
 - Documented direct `v0.7.1` wheel and source-distribution installs and added a checkout-free public-wheel smoke.
 

@@ -17,6 +17,18 @@ def render_markdown(packet: MergePacket) -> str:
         lines.append(f"- URL: {packet.url}")
     if packet.base or packet.head:
         lines.append(f"- Range: `{packet.base or '?'}..{packet.head or '?'}`")
+    if packet.pull_request_body:
+        lines.extend(
+            [
+                "",
+                "## Pull Request Description",
+                "",
+                *(
+                    f"> {line}" if line else ">"
+                    for line in packet.pull_request_body.splitlines()
+                ),
+            ]
+        )
     lines.extend(
         [
             f"- Files: {packet.stats.get('files', 0)}",
@@ -87,6 +99,14 @@ def render_html(packet: MergePacket) -> str:
         for item in packet.instructions
     ) or "<li>No repo instruction files found by mergepack.</li>"
     checklist_items = "\n".join(f"<li>{escape(item)}</li>" for item in packet.checklist)
+    pull_request_context = ""
+    if packet.pull_request_body:
+        pull_request_context = f"""
+  <section>
+    <h2>Pull Request Description</h2>
+    <div class="panel"><pre>{escape(packet.pull_request_body)}</pre></div>
+  </section>
+"""
 
     return f"""<!doctype html>
 <html lang="en">
@@ -206,6 +226,8 @@ def render_html(packet: MergePacket) -> str:
       <div>Range: <code>{escape(packet.base or "?")}..{escape(packet.head or "?")}</code></div>
     </div>
   </header>
+
+{pull_request_context}
 
   <section>
     <h2>Changed Files</h2>
