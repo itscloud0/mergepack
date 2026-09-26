@@ -93,6 +93,7 @@ class MergepackTests(unittest.TestCase):
         self.assertEqual(classify_path("src/cart.spec.tsx"), "test")
         self.assertEqual(classify_path(".github/workflows/ci.yml"), "ci")
         self.assertEqual(classify_path("pyproject.toml"), "package")
+        self.assertEqual(classify_path("pom.xml"), "package")
         self.assertEqual(classify_path("docs/usage.md"), "docs")
 
     def test_parse_changed_files_counts_delta(self) -> None:
@@ -454,6 +455,51 @@ index 1111111..2222222 100644
         self.assertEqual(group.ecosystem, "go")
         self.assertEqual(group.commands, ("cd services/worker && go test ./...",))
         self.assertIn("cd services/worker && go test ./...", packet.commands)
+
+    def test_detects_nested_maven_module_package_group(self) -> None:
+        with tempfile.TemporaryDirectory() as raw_tmp:
+            repo = Path(raw_tmp)
+            module = repo / "services" / "api"
+            module.mkdir(parents=True)
+            (repo / "pom.xml").write_text(
+                """<project>
+  <modelVersion>4.0.0</modelVersion>
+  <groupId>com.example</groupId>
+  <artifactId>platform</artifactId>
+  <version>1.0.0</version>
+  <packaging>pom</packaging>
+  <modules><module>services/api</module></modules>
+</project>
+""",
+                encoding="utf-8",
+            )
+            (module / "pom.xml").write_text(
+                """<project>
+  <modelVersion>4.0.0</modelVersion>
+  <parent><artifactId>platform</artifactId></parent>
+  <artifactId>api-service</artifactId>
+</project>
+""",
+                encoding="utf-8",
+            )
+            diff = """diff --git a/services/api/src/App.java b/services/api/src/App.java
+index 1111111..2222222 100644
+--- a/services/api/src/App.java
++++ b/services/api/src/App.java
+@@ -1 +1,2 @@
+ class App {}
++class Health {}
+"""
+
+            packet = build_packet(repo, DiffSource(label="maven monorepo diff", diff_text=diff))
+
+        self.assertEqual(len(packet.package_groups), 1)
+        group = packet.package_groups[0]
+        self.assertEqual(group.name, "api-service")
+        self.assertEqual(group.path, "services/api")
+        self.assertEqual(group.ecosystem, "maven")
+        self.assertEqual(group.commands, ("mvn -pl services/api -am test",))
+        self.assertIn("mvn -pl services/api -am test", packet.commands)
 
     def test_language_fixtures_match_expected_packets(self) -> None:
         expected = json.loads((FIXTURE_ROOT / "expected-packets.json").read_text(encoding="utf-8"))

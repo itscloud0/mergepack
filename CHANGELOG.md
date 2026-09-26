@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Added Maven multi-module grouping with package-scoped `mvn -pl ... -am test` commands.
 - Pack GitHub inline review comments from `--pr` into Markdown, JSON, HTML, and agent-ready output.
 - Preserve GitHub PR descriptions in generated Markdown, JSON, HTML, and agent-ready packets.
 - Pinned external GitHub Action dependencies in workflows, the composite action, and documented examples to immutable commits, with regression coverage against tag drift.

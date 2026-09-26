@@ -156,9 +156,10 @@ When `--config` is omitted, mergepack auto-discovers `.mergepack.json` or
 configured path roles override the built-in file-role heuristics for matching paths.
 
 For monorepos, mergepack also groups changed files by detected package or workspace.
-It detects npm workspaces, nested Python packages, Cargo workspace members, and nested
-Go modules from existing `package.json`, `pyproject.toml`, `setup.py`, `Cargo.toml`, and
-`go.mod` files. When a package has test/build scripts or standard package commands, the
+It detects npm workspaces, nested Python packages, Cargo workspace members, nested
+Go modules, and Maven multi-module projects from existing `package.json`, `pyproject.toml`,
+`setup.py`, `Cargo.toml`, `go.mod`, and `pom.xml` files. When a package has test/build
+scripts or standard package commands, the
 packet shows
 package-scoped commands such as:
 
@@ -166,6 +167,7 @@ package-scoped commands such as:
 npm test --workspace packages/web
 cd services/api && python -m pytest
 cargo test -p mergepack-core
+mvn -pl services/api -am test
 ```
 
 Use GitHub CLI for a public PR:
@@ -342,7 +344,7 @@ Read `AGENT_SKILLS.md` for install and usage notes.
 - Config files support explicit commands and path role rules; they do not provide
   semantic test selection or ownership matching.
 - Changed-files mode has no diff hunks, so additions/deletions are `0` and the packet tells reviewers to inspect the PR diff separately.
-- Python command detection prefers tox/uv and pytest when repo config is present; Go, Rust, and Node command detection uses `go.mod`, `Cargo.toml`, and `package.json` scripts.
+- Python command detection prefers tox/uv and pytest when repo config is present; Go, Rust, Node, and Maven command detection uses `go.mod`, `Cargo.toml`, `package.json`, and `pom.xml` metadata.
 - It does not inspect code ownership or coverage data.
 - It does not redact secrets from arbitrary diffs; do not run it on sensitive patches.
 

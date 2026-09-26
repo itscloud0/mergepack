@@ -7,6 +7,7 @@ import shutil
 import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
+from xml.etree import ElementTree
 
 
 class MergepackError(Exception):
@@ -76,7 +77,14 @@ VALID_FILE_ROLES = (
     "other",
 )
 CONFIG_FILENAMES = (".mergepack.json", "mergepack.json")
-PACKAGE_MANIFESTS = ("package.json", "pyproject.toml", "setup.py", "Cargo.toml", "go.mod")
+PACKAGE_MANIFESTS = (
+    "package.json",
+    "pyproject.toml",
+    "setup.py",
+    "Cargo.toml",
+    "go.mod",
+    "pom.xml",
+)
 MANIFEST_SCAN_SKIP_DIRS = {
     ".git",
     ".hg",
@@ -599,7 +607,17 @@ def classify_path(path: str, config: MergepackConfig | None = None) -> str:
         or name.endswith(test_suffixes)
     ):
         return "test"
-    if name in {"pyproject.toml", "package.json", "package-lock.json", "pnpm-lock.yaml", "yarn.lock", "go.mod", "cargo.toml", "requirements.txt"}:
+    if name in {
+        "pyproject.toml",
+        "package.json",
+        "package-lock.json",
+        "pnpm-lock.yaml",
+        "yarn.lock",
+        "go.mod",
+        "cargo.toml",
+        "pom.xml",
+        "requirements.txt",
+    }:
         return "package"
     if "migration" in parts or "migrations" in parts:
         return "migration"
@@ -685,6 +703,8 @@ def detect_commands(
     if (repo / "Cargo.toml").exists():
         add("cargo test")
         add("cargo build")
+    if (repo / "pom.xml").exists():
+        add("mvn test")
     if has_make_target(repo / "Makefile", "test"):
         add("make test")
     if any(file.role == "ci" for file in changed_files):
@@ -741,6 +761,7 @@ class PackageRoot:
 
 def discover_package_roots(repo: Path) -> list[PackageRoot]:
     workspace_paths = discover_npm_workspace_paths(repo)
+    maven_workspace_paths = discover_maven_workspace_paths(repo)
     roots: dict[tuple[str, str], PackageRoot] = {}
 
     for manifest in iter_package_manifests(repo):
@@ -748,7 +769,15 @@ def discover_package_roots(repo: Path) -> list[PackageRoot]:
         relative = relative_package_path(repo, package_dir)
         name = infer_package_name(package_dir, manifest)
         ecosystem = ecosystem_for_manifest(manifest.name)
-        commands = package_commands(repo, package_dir, ecosystem, name, relative, workspace_paths)
+        commands = package_commands(
+            repo,
+            package_dir,
+            ecosystem,
+            name,
+            relative,
+            workspace_paths,
+            maven_workspace_paths,
+        )
         key = (ecosystem, relative)
         if commands and key not in roots:
             roots[key] = PackageRoot(
@@ -782,6 +811,8 @@ def ecosystem_for_manifest(name: str) -> str:
         return "cargo"
     if name == "go.mod":
         return "go"
+    if name == "pom.xml":
+        return "maven"
     return "python"
 
 
@@ -808,6 +839,7 @@ def package_commands(
     name: str,
     relative: str,
     npm_workspace_paths: set[str],
+    maven_workspace_paths: set[str],
 ) -> list[str]:
     raw_commands = detect_commands(package_dir, [])
     if raw_commands == ["run the repo's normal test command for the changed files"]:
@@ -818,6 +850,8 @@ def package_commands(
         return [workspace_npm_command(command, relative) for command in raw_commands]
     if ecosystem == "cargo" and cargo_package_is_workspace_member(repo, package_dir):
         return [workspace_cargo_command(command, name, relative) for command in raw_commands]
+    if ecosystem == "maven" and relative in maven_workspace_paths:
+        return [workspace_maven_command(command, relative) for command in raw_commands]
     return [f"cd {relative} && {command}" for command in raw_commands]
 
 
@@ -833,6 +867,12 @@ def workspace_cargo_command(command: str, package_name: str, package_path: str) 
     if package_name and command in {"cargo test", "cargo build"}:
         action = command.removeprefix("cargo ")
         return f"cargo {action} -p {package_name}"
+    return f"cd {package_path} && {command}"
+
+
+def workspace_maven_command(command: str, package_path: str) -> str:
+    if command.startswith("mvn "):
+        return f"mvn -pl {package_path} -am {command.removeprefix('mvn ')}"
     return f"cd {package_path} && {command}"
 
 
@@ -864,6 +904,11 @@ def discover_npm_workspace_paths(repo: Path) -> set[str]:
     return workspaces
 
 
+def discover_maven_workspace_paths(repo: Path) -> set[str]:
+    modules = parse_maven_modules(read_text_safely(repo / "pom.xml"))
+    return {module for module in modules if (repo / module / "pom.xml").is_file()}
+
+
 def infer_package_name(package_dir: Path, manifest: Path) -> str:
     if manifest.name == "package.json":
         data = read_json_object(manifest)
@@ -872,6 +917,10 @@ def infer_package_name(package_dir: Path, manifest: Path) -> str:
             return raw_name.strip()
     if manifest.name in {"pyproject.toml", "Cargo.toml"}:
         found = parse_toml_string_value(read_text_safely(manifest), "name")
+        if found:
+            return found
+    if manifest.name == "pom.xml":
+        found = parse_maven_artifact_id(read_text_safely(manifest))
         if found:
             return found
     if manifest.name == "go.mod":
@@ -884,6 +933,38 @@ def infer_package_name(package_dir: Path, manifest: Path) -> str:
 def parse_go_module_path(text: str) -> str | None:
     match = re.search(r"^\s*module\s+([^\s]+)\s*$", text, re.MULTILINE)
     return match.group(1).strip() if match else None
+
+
+def parse_maven_artifact_id(text: str) -> str | None:
+    try:
+        root = ElementTree.fromstring(text)
+    except ElementTree.ParseError:
+        return None
+    for child in root:
+        if child.tag.rsplit("}", 1)[-1] == "artifactId" and child.text:
+            value = child.text.strip()
+            if value:
+                return value
+    return None
+
+
+def parse_maven_modules(text: str) -> list[str]:
+    try:
+        root = ElementTree.fromstring(text)
+    except ElementTree.ParseError:
+        return []
+    for child in root:
+        if child.tag.rsplit("}", 1)[-1] != "modules":
+            continue
+        modules = []
+        for module in child:
+            if module.tag.rsplit("}", 1)[-1] != "module" or not module.text:
+                continue
+            value = module.text.strip().replace("\\", "/").strip("/")
+            if value and value != "." and value not in modules:
+                modules.append(value)
+        return modules
+    return []
 
 
 def parse_toml_string_value(text: str, key: str) -> str | None:
