@@ -14,6 +14,19 @@ class MergepackError(Exception):
 
 
 @dataclass(frozen=True)
+class ReviewComment:
+    author: str | None
+    body: str
+    path: str | None = None
+    line: int | None = None
+    side: str | None = None
+    original_line: int | None = None
+    original_side: str | None = None
+    url: str | None = None
+    diff_hunk: str | None = None
+
+
+@dataclass(frozen=True)
 class DiffSource:
     label: str
     diff_text: str
@@ -24,6 +37,7 @@ class DiffSource:
     body: str | None = None
     changed_paths: tuple[str, ...] = ()
     limitations: tuple[str, ...] = ()
+    review_comments: tuple[ReviewComment, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -110,6 +124,7 @@ class MergePacket:
     head: str | None
     url: str | None
     pull_request_body: str | None
+    review_comments: list[ReviewComment]
     changed_files: list[ChangedFile]
     commands: list[str]
     package_groups: list[PackageGroup]
@@ -135,6 +150,7 @@ class MergePacket:
             "head": self.head,
             "url": self.url,
             "pull_request_body": self.pull_request_body,
+            "review_comments": [comment.__dict__ for comment in self.review_comments],
             "stats": self.stats,
             "changed_files": [file.__dict__ for file in self.changed_files],
             "commands": self.commands,
@@ -307,6 +323,20 @@ def load_diff_from_pr(pr: str) -> DiffSource:
     except json.JSONDecodeError as exc:
         raise MergepackError("gh returned invalid PR metadata") from exc
     diff_text = run_command(["gh", "pr", "diff", number, "--repo", repo])
+    comments_raw = run_command(
+        [
+            "gh",
+            "api",
+            "--paginate",
+            "--slurp",
+            f"repos/{repo}/pulls/{number}/comments?per_page=100",
+        ]
+    )
+    try:
+        comments_payload = json.loads(comments_raw)
+    except json.JSONDecodeError as exc:
+        raise MergepackError("gh returned invalid PR review comments") from exc
+    review_comments = parse_review_comments(comments_payload)
     return DiffSource(
         label=f"GitHub PR {repo}#{number}",
         diff_text=diff_text,
@@ -315,7 +345,63 @@ def load_diff_from_pr(pr: str) -> DiffSource:
         url=view.get("url"),
         title=view.get("title"),
         body=view.get("body"),
+        review_comments=review_comments,
     )
+
+
+def parse_review_comments(payload: object) -> tuple[ReviewComment, ...]:
+    if not isinstance(payload, list):
+        raise MergepackError("gh returned invalid PR review comments")
+
+    pages: list[object] = []
+    if not payload or all(isinstance(page, list) for page in payload):
+        for page in payload:
+            assert isinstance(page, list)
+            pages.extend(page)
+    else:
+        pages = payload
+
+    comments: list[ReviewComment] = []
+    for index, raw_comment in enumerate(pages):
+        if not isinstance(raw_comment, dict):
+            raise MergepackError(f"gh returned invalid PR review comment at index {index}")
+        body = raw_comment.get("body")
+        if not isinstance(body, str):
+            raise MergepackError(f"gh returned invalid PR review comment body at index {index}")
+        user = raw_comment.get("user")
+        author = user.get("login") if isinstance(user, dict) else None
+        if not isinstance(author, str):
+            author = None
+        comments.append(
+            ReviewComment(
+                author=author,
+                body=body,
+                path=raw_comment.get("path") if isinstance(raw_comment.get("path"), str) else None,
+                line=raw_comment.get("line") if isinstance(raw_comment.get("line"), int) else None,
+                side=raw_comment.get("side") if isinstance(raw_comment.get("side"), str) else None,
+                original_line=(
+                    raw_comment.get("original_line")
+                    if isinstance(raw_comment.get("original_line"), int)
+                    else None
+                ),
+                original_side=(
+                    raw_comment.get("original_side")
+                    if isinstance(raw_comment.get("original_side"), str)
+                    else None
+                ),
+                url=(
+                    raw_comment.get("html_url")
+                    if isinstance(raw_comment.get("html_url"), str)
+                    else None
+                ),
+                diff_hunk=(
+                    raw_comment.get("diff_hunk")
+                    if isinstance(raw_comment.get("diff_hunk"), str)
+                    else None
+                ),
+            )
+        )
+    return tuple(comments)
 
 
 def parse_pr_spec(spec: str) -> tuple[str, str]:
@@ -362,6 +448,7 @@ def build_packet(
     prompt = build_agent_prompt(
         title=packet_title,
         pull_request_body=pull_request_body,
+        review_comments=diff_source.review_comments,
         changed_files=changed_files,
         commands=commands,
         package_groups=package_groups,
@@ -378,6 +465,7 @@ def build_packet(
         head=diff_source.head,
         url=diff_source.url,
         pull_request_body=pull_request_body,
+        review_comments=list(diff_source.review_comments),
         changed_files=changed_files,
         commands=commands,
         package_groups=package_groups,
@@ -980,6 +1068,7 @@ def build_checklist(
 def build_agent_prompt(
     title: str,
     pull_request_body: str | None,
+    review_comments: tuple[ReviewComment, ...],
     changed_files: list[ChangedFile],
     commands: list[str],
     package_groups: list[PackageGroup],
@@ -1003,6 +1092,7 @@ def build_agent_prompt(
         )
     else:
         pull_request_lines = "- No PR description supplied."
+    review_comment_lines = format_review_comments_for_prompt(review_comments)
 
     return (
         f"You are reviewing this pull request: {title}\n\n"
@@ -1010,6 +1100,8 @@ def build_agent_prompt(
         "tests, regressions, and merge risk. Do not rewrite unrelated code.\n\n"
         "Pull request description:\n"
         f"{pull_request_lines}\n\n"
+        "Inline review comments:\n"
+        f"{review_comment_lines}\n\n"
         "Changed files:\n"
         f"{file_lines}\n\n"
         "Repo instructions:\n"
@@ -1026,6 +1118,38 @@ def build_agent_prompt(
         "```\n\n"
         "Return findings first, then suggested fixes, then exact commands to run."
     )
+
+
+def review_comment_location(comment: ReviewComment) -> str:
+    location = comment.path or "General review comment"
+    if comment.line is not None:
+        location += f":{comment.line}"
+        if comment.side:
+            location += f" ({comment.side})"
+    elif comment.original_line is not None:
+        location += f":{comment.original_line} (outdated"
+        if comment.original_side:
+            location += f" {comment.original_side}"
+        location += ")"
+    return location
+
+
+def format_review_comments_for_prompt(comments: tuple[ReviewComment, ...]) -> str:
+    if not comments:
+        return "- No inline review comments supplied."
+
+    lines: list[str] = []
+    for index, comment in enumerate(comments, 1):
+        author = f"@{comment.author}" if comment.author else "unknown author"
+        url = f"; {comment.url}" if comment.url else ""
+        lines.append(f"{index}. {review_comment_location(comment)} — {author}{url}")
+        lines.extend(f"   > {line}" if line else "   >" for line in comment.body.splitlines())
+        if comment.diff_hunk:
+            lines.append("   Diff hunk:")
+            lines.extend(
+                f"   > {line}" if line else "   >" for line in comment.diff_hunk.splitlines()
+            )
+    return "\n".join(lines)
 
 
 def format_package_groups_for_prompt(package_groups: list[PackageGroup]) -> str:

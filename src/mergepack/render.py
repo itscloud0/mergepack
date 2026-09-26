@@ -3,7 +3,11 @@ from __future__ import annotations
 import json
 from html import escape
 
-from .core import ChangedFile, MergePacket
+from .core import ChangedFile, MergePacket, review_comment_location
+
+
+def quote_lines(text: str, prefix: str = "> ") -> list[str]:
+    return [f"{prefix}{line}" if line else prefix.rstrip() for line in text.splitlines()]
 
 
 def render_markdown(packet: MergePacket) -> str:
@@ -29,6 +33,21 @@ def render_markdown(packet: MergePacket) -> str:
                 ),
             ]
         )
+    if packet.review_comments:
+        lines.extend(["", "## Inline Review Comments", ""])
+        for index, comment in enumerate(packet.review_comments, 1):
+            lines.extend(
+                [
+                    f"### Review comment {index}: {review_comment_location(comment)}",
+                    "",
+                    f"- Author: @{comment.author}" if comment.author else "- Author: unknown",
+                ]
+            )
+            if comment.url:
+                lines.append(f"- URL: {comment.url}")
+            lines.extend(["", *quote_lines(comment.body)])
+            if comment.diff_hunk:
+                lines.extend(["", "Diff hunk:", "", *quote_lines(comment.diff_hunk)])
     lines.extend(
         [
             f"- Files: {packet.stats.get('files', 0)}",
@@ -105,6 +124,29 @@ def render_html(packet: MergePacket) -> str:
   <section>
     <h2>Pull Request Description</h2>
     <div class="panel"><pre>{escape(packet.pull_request_body)}</pre></div>
+        </section>
+"""
+    review_comment_context = ""
+    if packet.review_comments:
+        comment_sections: list[str] = []
+        for index, comment in enumerate(packet.review_comments, 1):
+            author = f"@{escape(comment.author)}" if comment.author else "unknown"
+            location = escape(review_comment_location(comment))
+            body = escape(comment.body)
+            url = f"<a href=\"{escape(comment.url)}\">Open comment</a>" if comment.url else ""
+            diff_hunk = (
+                f"<h4>Diff hunk</h4><pre>{escape(comment.diff_hunk)}</pre>"
+                if comment.diff_hunk
+                else ""
+            )
+            comment_sections.append(
+                f"<article class='panel'><h3>Review comment {index}: {location}</h3>"
+                f"<p>Author: {author} {url}</p><pre>{body}</pre>{diff_hunk}</article>"
+            )
+        review_comment_context = f"""
+  <section>
+    <h2>Inline Review Comments</h2>
+    {''.join(comment_sections)}
   </section>
 """
 
@@ -228,6 +270,8 @@ def render_html(packet: MergePacket) -> str:
   </header>
 
 {pull_request_context}
+
+{review_comment_context}
 
   <section>
     <h2>Changed Files</h2>

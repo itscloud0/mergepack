@@ -7,10 +7,12 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from mergepack import __version__
 from mergepack.core import (
     DiffSource,
+    ReviewComment,
     build_packet,
     classify_path,
     collect_instructions,
@@ -19,6 +21,7 @@ from mergepack.core import (
     load_config,
     load_diff_from_file,
     load_diff_from_git,
+    load_diff_from_pr,
     parse_changed_files,
     parse_changed_file_list,
     parse_pr_spec,
@@ -162,6 +165,81 @@ class MergepackTests(unittest.TestCase):
         self.assertIsNone(packet.pull_request_body)
         self.assertNotIn("## Pull Request Description", render_markdown(packet))
         self.assertNotIn("<h2>Pull Request Description</h2>", render_html(packet))
+
+    def test_review_comments_are_preserved_in_packet_outputs(self) -> None:
+        comment = ReviewComment(
+            author="octocat",
+            body="Please add a regression test.",
+            path="src/auth.py",
+            line=4,
+            side="RIGHT",
+            url="https://github.com/owner/repo/pull/12#discussion_r1",
+            diff_hunk="@@ -1,2 +1,3 @@\n+return False",
+        )
+        with tempfile.TemporaryDirectory() as raw_tmp:
+            packet = build_packet(
+                Path(raw_tmp),
+                DiffSource(
+                    label="GitHub PR owner/repo#12",
+                    diff_text=SAMPLE_DIFF,
+                    review_comments=(comment,),
+                ),
+            )
+            markdown = render_markdown(packet)
+            html = render_html(packet)
+            payload = packet.to_json()
+
+        self.assertIn("## Inline Review Comments", markdown)
+        self.assertIn("src/auth.py:4 (RIGHT)", markdown)
+        self.assertIn("> Please add a regression test.", markdown)
+        self.assertIn("Inline Review Comments", html)
+        self.assertIn("Please add a regression test.", html)
+        self.assertIn("review_comments", payload)
+        self.assertEqual(payload["review_comments"][0]["author"], "octocat")
+        self.assertIn("Inline review comments:", packet.agent_prompt)
+        self.assertIn("Please add a regression test.", packet.agent_prompt)
+
+    def test_load_diff_from_pr_fetches_paginated_review_comments(self) -> None:
+        metadata = json.dumps(
+            {
+                "title": "Fix auth",
+                "body": "Please review",
+                "url": "https://github.com/owner/repo/pull/12",
+                "baseRefName": "main",
+                "headRefName": "fix-auth",
+            }
+        )
+        comments = json.dumps(
+            [
+                [
+                    {
+                        "body": "Please add a test.",
+                        "path": "src/auth.py",
+                        "line": 4,
+                        "side": "RIGHT",
+                        "html_url": "https://github.com/owner/repo/pull/12#discussion_r1",
+                        "user": {"login": "octocat"},
+                    }
+                ],
+                [],
+            ]
+        )
+        with (
+            patch("mergepack.core.shutil.which", return_value="/usr/bin/gh"),
+            patch(
+                "mergepack.core.run_command",
+                side_effect=[metadata, SAMPLE_DIFF, comments],
+            ) as run_command,
+        ):
+            source = load_diff_from_pr("owner/repo#12")
+
+        self.assertEqual(len(source.review_comments), 1)
+        self.assertEqual(source.review_comments[0].author, "octocat")
+        self.assertEqual(source.review_comments[0].path, "src/auth.py")
+        self.assertIn(
+            "repos/owner/repo/pulls/12/comments?per_page=100",
+            run_command.call_args_list[2].args[0],
+        )
 
     def test_json_shape_is_serializable(self) -> None:
         with tempfile.TemporaryDirectory() as raw_tmp:
