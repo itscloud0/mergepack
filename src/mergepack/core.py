@@ -84,6 +84,10 @@ PACKAGE_MANIFESTS = (
     "Cargo.toml",
     "go.mod",
     "pom.xml",
+    "build.gradle",
+    "build.gradle.kts",
+    "settings.gradle",
+    "settings.gradle.kts",
 )
 MANIFEST_SCAN_SKIP_DIRS = {
     ".git",
@@ -98,6 +102,7 @@ MANIFEST_SCAN_SKIP_DIRS = {
     "dist",
     "node_modules",
     "target",
+    ".gradle",
     "venv",
 }
 
@@ -616,6 +621,10 @@ def classify_path(path: str, config: MergepackConfig | None = None) -> str:
         "go.mod",
         "cargo.toml",
         "pom.xml",
+        "build.gradle",
+        "build.gradle.kts",
+        "settings.gradle",
+        "settings.gradle.kts",
         "requirements.txt",
     }:
         return "package"
@@ -705,6 +714,8 @@ def detect_commands(
         add("cargo build")
     if (repo / "pom.xml").exists():
         add("mvn test")
+    if any((repo / name).exists() for name in ("build.gradle", "build.gradle.kts")):
+        add("./gradlew test" if (repo / "gradlew").exists() else "gradle test")
     if has_make_target(repo / "Makefile", "test"):
         add("make test")
     if any(file.role == "ci" for file in changed_files):
@@ -762,6 +773,7 @@ class PackageRoot:
 def discover_package_roots(repo: Path) -> list[PackageRoot]:
     workspace_paths = discover_npm_workspace_paths(repo)
     maven_workspace_paths = discover_maven_workspace_paths(repo)
+    gradle_workspace_names = discover_gradle_workspace_names(repo)
     roots: dict[tuple[str, str], PackageRoot] = {}
 
     for manifest in iter_package_manifests(repo):
@@ -769,6 +781,8 @@ def discover_package_roots(repo: Path) -> list[PackageRoot]:
         relative = relative_package_path(repo, package_dir)
         name = infer_package_name(package_dir, manifest)
         ecosystem = ecosystem_for_manifest(manifest.name)
+        if ecosystem == "gradle" and relative in gradle_workspace_names:
+            name = gradle_workspace_names[relative]
         commands = package_commands(
             repo,
             package_dir,
@@ -777,6 +791,7 @@ def discover_package_roots(repo: Path) -> list[PackageRoot]:
             relative,
             workspace_paths,
             maven_workspace_paths,
+            gradle_workspace_names,
         )
         key = (ecosystem, relative)
         if commands and key not in roots:
@@ -813,6 +828,8 @@ def ecosystem_for_manifest(name: str) -> str:
         return "go"
     if name == "pom.xml":
         return "maven"
+    if name in {"build.gradle", "build.gradle.kts", "settings.gradle", "settings.gradle.kts"}:
+        return "gradle"
     return "python"
 
 
@@ -840,6 +857,7 @@ def package_commands(
     relative: str,
     npm_workspace_paths: set[str],
     maven_workspace_paths: set[str],
+    gradle_workspace_names: dict[str, str],
 ) -> list[str]:
     raw_commands = detect_commands(package_dir, [])
     if raw_commands == ["run the repo's normal test command for the changed files"]:
@@ -852,6 +870,11 @@ def package_commands(
         return [workspace_cargo_command(command, name, relative) for command in raw_commands]
     if ecosystem == "maven" and relative in maven_workspace_paths:
         return [workspace_maven_command(command, relative) for command in raw_commands]
+    if ecosystem == "gradle" and relative in gradle_workspace_names:
+        return [
+            workspace_gradle_command(repo, command, gradle_workspace_names[relative], relative)
+            for command in raw_commands
+        ]
     return [f"cd {relative} && {command}" for command in raw_commands]
 
 
@@ -873,6 +896,18 @@ def workspace_cargo_command(command: str, package_name: str, package_path: str) 
 def workspace_maven_command(command: str, package_path: str) -> str:
     if command.startswith("mvn "):
         return f"mvn -pl {package_path} -am {command.removeprefix('mvn ')}"
+    return f"cd {package_path} && {command}"
+
+
+def workspace_gradle_command(
+    repo: Path,
+    command: str,
+    project_path: str,
+    package_path: str,
+) -> str:
+    launcher = "./gradlew" if (repo / "gradlew").exists() else "gradle"
+    if command.endswith(" test"):
+        return f"{launcher} {project_path}:test"
     return f"cd {package_path} && {command}"
 
 
@@ -907,6 +942,43 @@ def discover_npm_workspace_paths(repo: Path) -> set[str]:
 def discover_maven_workspace_paths(repo: Path) -> set[str]:
     modules = parse_maven_modules(read_text_safely(repo / "pom.xml"))
     return {module for module in modules if (repo / module / "pom.xml").is_file()}
+
+
+def discover_gradle_workspace_names(repo: Path) -> dict[str, str]:
+    settings = "\n".join(
+        read_text_safely(repo / name)
+        for name in ("settings.gradle", "settings.gradle.kts")
+    )
+    project_paths = parse_gradle_project_paths(settings)
+    custom_paths = parse_gradle_project_dirs(settings)
+    result: dict[str, str] = {}
+    for project_path in project_paths:
+        relative = custom_paths.get(project_path, project_path.lstrip(":").replace(":", "/"))
+        module = repo / relative
+        if any((module / name).is_file() for name in ("build.gradle", "build.gradle.kts")):
+            result[relative] = project_path
+    return result
+
+
+def parse_gradle_project_paths(text: str) -> list[str]:
+    paths: list[str] = []
+    for match in re.finditer(r"\binclude\s*(?:\(([^)]*)\)|([^\n;]+))", text, re.DOTALL):
+        body = match.group(1) if match.group(1) is not None else match.group(2)
+        for project_path in re.findall(r"['\"](:[^'\"]+)['\"]", body):
+            if project_path not in paths:
+                paths.append(project_path)
+    return paths
+
+
+def parse_gradle_project_dirs(text: str) -> dict[str, str]:
+    pattern = (
+        r"project\s*\(\s*['\"](:[^'\"]+)['\"]\s*\)\s*\.projectDir"
+        r"\s*=\s*file\s*\(\s*['\"]([^'\"]+)['\"]\s*\)"
+    )
+    return {
+        project_path: relative.replace("\\", "/").strip("/")
+        for project_path, relative in re.findall(pattern, text)
+    }
 
 
 def infer_package_name(package_dir: Path, manifest: Path) -> str:

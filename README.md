@@ -157,8 +157,9 @@ configured path roles override the built-in file-role heuristics for matching pa
 
 For monorepos, mergepack also groups changed files by detected package or workspace.
 It detects npm workspaces, nested Python packages, Cargo workspace members, nested
-Go modules, and Maven multi-module projects from existing `package.json`, `pyproject.toml`,
-`setup.py`, `Cargo.toml`, `go.mod`, and `pom.xml` files. When a package has test/build
+Go modules, Maven multi-module projects, and Gradle multi-project builds from existing
+`package.json`, `pyproject.toml`, `setup.py`, `Cargo.toml`, `go.mod`, `pom.xml`,
+`settings.gradle`, and `build.gradle` files. When a package has test/build
 scripts or standard package commands, the
 packet shows
 package-scoped commands such as:
@@ -168,6 +169,7 @@ npm test --workspace packages/web
 cd services/api && python -m pytest
 cargo test -p mergepack-core
 mvn -pl services/api -am test
+gradle :api:test
 ```
 
 Use GitHub CLI for a public PR:

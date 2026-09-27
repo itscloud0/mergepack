@@ -501,6 +501,41 @@ index 1111111..2222222 100644
         self.assertEqual(group.commands, ("mvn -pl services/api -am test",))
         self.assertIn("mvn -pl services/api -am test", packet.commands)
 
+    def test_detects_nested_gradle_project_package_group(self) -> None:
+        with tempfile.TemporaryDirectory() as raw_tmp:
+            repo = Path(raw_tmp)
+            module = repo / "services" / "api"
+            module.mkdir(parents=True)
+            (repo / "settings.gradle").write_text(
+                """rootProject.name = 'platform'
+include ':api'
+project(':api').projectDir = file('services/api')
+""",
+                encoding="utf-8",
+            )
+            (repo / "build.gradle").write_text("", encoding="utf-8")
+            (repo / "gradlew").write_text("#!/bin/sh\n", encoding="utf-8")
+            (module / "build.gradle").write_text("plugins { id 'java' }\n", encoding="utf-8")
+            diff = """diff --git a/services/api/src/App.java b/services/api/src/App.java
+index 1111111..2222222 100644
+--- a/services/api/src/App.java
++++ b/services/api/src/App.java
+@@ -1 +1,2 @@
+ class App {}
++class Health {}
+"""
+
+            packet = build_packet(repo, DiffSource(label="gradle monorepo diff", diff_text=diff))
+
+        self.assertEqual(len(packet.package_groups), 1)
+        group = packet.package_groups[0]
+        self.assertEqual(group.name, ":api")
+        self.assertEqual(group.path, "services/api")
+        self.assertEqual(group.ecosystem, "gradle")
+        self.assertEqual(group.commands, ("./gradlew :api:test",))
+        self.assertIn("./gradlew test", packet.commands)
+        self.assertIn("./gradlew :api:test", packet.commands)
+
     def test_language_fixtures_match_expected_packets(self) -> None:
         expected = json.loads((FIXTURE_ROOT / "expected-packets.json").read_text(encoding="utf-8"))
 

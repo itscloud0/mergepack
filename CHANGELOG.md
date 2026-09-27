@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Added Gradle multi-project grouping with module-scoped `gradle :project:test` commands.
 - Added Maven multi-module grouping with package-scoped `mvn -pl ... -am test` commands.
 - Pack GitHub inline review comments from `--pr` into Markdown, JSON, HTML, and agent-ready output.
 - Preserve GitHub PR descriptions in generated Markdown, JSON, HTML, and agent-ready packets.

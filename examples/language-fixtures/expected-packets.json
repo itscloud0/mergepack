@@ -28,5 +28,15 @@
       "src/cart.test.ts": {"role": "test", "status": "added"},
       "package.json": {"role": "package", "status": "modified"}
     }
+  },
+  "gradle": {
+    "repo": "gradle-repo",
+    "diff": "gradle-pr.diff",
+    "commands": ["gradle test", "gradle :api:test"],
+    "changed_files": {
+      "services/api/src/App.java": {"role": "source", "status": "modified"},
+      "services/api/src/test/java/AppTest.java": {"role": "test", "status": "added"},
+      "services/api/build.gradle": {"role": "package", "status": "modified"}
+    }
   }
 }
