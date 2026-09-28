@@ -801,6 +801,13 @@ class ActionMetadataTests(unittest.TestCase):
         self.assertIn("mergepack-pr-comment", action)
         self.assertIn("pull-requests: write", readme)
 
+    def test_readme_tracks_current_workspace_support(self) -> None:
+        readme = (PROJECT_ROOT / "README.md").read_text(encoding="utf-8")
+
+        self.assertIn("Maven multi-module projects", readme)
+        self.assertIn("Gradle multi-project builds", readme)
+        self.assertNotIn("- Workspace metadata for additional build systems.", readme)
+
 
 if __name__ == "__main__":
     unittest.main()

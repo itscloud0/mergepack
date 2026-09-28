@@ -346,13 +346,16 @@ Read `AGENT_SKILLS.md` for install and usage notes.
 - Config files support explicit commands and path role rules; they do not provide
   semantic test selection or ownership matching.
 - Changed-files mode has no diff hunks, so additions/deletions are `0` and the packet tells reviewers to inspect the PR diff separately.
-- Python command detection prefers tox/uv and pytest when repo config is present; Go, Rust, Node, and Maven command detection uses `go.mod`, `Cargo.toml`, `package.json`, and `pom.xml` metadata.
+- Python command detection prefers tox/uv and pytest when repo config is present; Go, Rust, Node, Maven, and Gradle command detection uses repository metadata such as `go.mod`, `Cargo.toml`, `package.json`, `pom.xml`, `settings.gradle`, and `build.gradle`.
 - It does not inspect code ownership or coverage data.
 - It does not redact secrets from arbitrary diffs; do not run it on sensitive patches.
 
 ## Roadmap
 
-- Workspace metadata for additional build systems.
+Workspace metadata is currently implemented for npm workspaces, nested Python
+packages, Cargo workspace members, nested Go modules, Maven multi-module
+projects, and Gradle multi-project builds. Additional build systems require a
+concrete user need and a representative fixture before implementation.
 
 ## Contributing
 
